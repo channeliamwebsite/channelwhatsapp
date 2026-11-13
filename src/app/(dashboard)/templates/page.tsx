@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { ModulePlaceholder } from "@/components/dashboard/module-placeholder";
+import { TemplatesManager } from "@/components/templates/templates-manager";
 
 export const metadata: Metadata = { title: "Templates" };
 
 export default function TemplatesPage() {
-  return <ModulePlaceholder href="/templates" />;
+  return <TemplatesManager />;
 }

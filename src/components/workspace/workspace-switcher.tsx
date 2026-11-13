@@ -9,6 +9,10 @@ import { cn } from "@/lib/utils";
 import type { Workspace } from "@/types/workspace";
 
 export function WorkspaceAvatar({ workspace, className }: { workspace: Workspace; className?: string }) {
+  if (workspace.logoUrl) {
+    // eslint-disable-next-line @next/next/no-img-element -- arbitrary admin-provided logo hosts
+    return <img src={workspace.logoUrl} alt="" className={cn("size-7 shrink-0 rounded-lg bg-white object-contain", className)} />;
+  }
   return (
     <span
       aria-hidden="true"

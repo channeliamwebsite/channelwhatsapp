@@ -1,13 +1,19 @@
 import { connection, NextResponse, type NextRequest } from "next/server";
 
+import { requireAdmin } from "@/lib/server/auth";
+import { ApiError, toErrorResponse } from "@/lib/server/errors";
 import { listClicks } from "@/lib/tracking/click-store";
 
-/** DEV ONLY — recent recorded clicks for a workspace/campaign. */
+/** Recent recorded clicks for a workspace / campaign (Super Admin only). */
 export async function GET(request: NextRequest) {
-  await connection(); // always run per request
-  if (process.env.NODE_ENV === "production") return new NextResponse(null, { status: 404 });
-  const workspaceId = request.nextUrl.searchParams.get("workspaceId");
-  if (!workspaceId) return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
-  const campaignId = request.nextUrl.searchParams.get("campaignId") ?? undefined;
-  return NextResponse.json({ clicks: listClicks({ workspaceId, campaignId }) }, { headers: { "Cache-Control": "no-store" } });
+  try {
+    await connection();
+    await requireAdmin();
+    const workspaceId = request.nextUrl.searchParams.get("workspaceId");
+    if (!workspaceId) throw new ApiError(400, "workspaceId is required");
+    const campaignId = request.nextUrl.searchParams.get("campaignId") ?? undefined;
+    return NextResponse.json({ clicks: await listClicks({ workspaceId, campaignId }) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return toErrorResponse(error);
+  }
 }

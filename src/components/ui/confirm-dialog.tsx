@@ -9,7 +9,7 @@ export type ConfirmOptions = {
   description: React.ReactNode;
   confirmLabel: string;
   destructive?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 };
 
 export function ConfirmDialog({ options, onClose }: { options: ConfirmOptions | null; onClose: () => void }) {
@@ -27,7 +27,7 @@ export function ConfirmDialog({ options, onClose }: { options: ConfirmOptions | 
               size="lg"
               variant={options.destructive ? "destructive" : "default"}
               onClick={() => {
-                options.onConfirm();
+                void options.onConfirm();
                 onClose();
               }}
             >

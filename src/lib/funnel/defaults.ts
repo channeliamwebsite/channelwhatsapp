@@ -1,26 +1,17 @@
 import type { FunnelDefinition } from "@/types/campaign";
 
-/** Sensible starting funnel using a workspace's standard templates. */
-export function defaultFunnel(workspaceId: string): FunnelDefinition {
-  const tpl = (key: string) => ({ type: "send" as const, templateId: `${workspaceId}_${key}` });
+/** Empty starting funnel: Message 1 must be chosen; follow-ups default to exit. */
+export function defaultFunnel(): FunnelDefinition {
+  const exit = { type: "exit" as const };
+  const branches = { clicked: exit, read_not_clicked: exit, not_read: exit, replied: exit, failed: exit };
   return {
-    message1: { templateId: `${workspaceId}_launch_invite` },
+    message1: { templateId: "" },
     wait1Hours: 24,
-    message2: {
-      clicked: tpl("thanks_clicked"),
-      read_not_clicked: tpl("reminder_read"),
-      not_read: tpl("gentle_nudge"),
-      replied: { type: "exit" },
-      failed: { type: "exit" },
-    },
+    message2: { ...branches },
     wait2Hours: 48,
-    message3: {
-      clicked: tpl("last_chance"),
-      read_not_clicked: tpl("last_chance"),
-      not_read: { type: "exit" },
-      replied: { type: "exit" },
-      failed: { type: "exit" },
-    },
+    message3: { ...branches },
     exitOnConversion: true,
+    exitOnReply: true,
+    retry: { maxAttempts: 2, delayMinutes: 15 },
   };
 }

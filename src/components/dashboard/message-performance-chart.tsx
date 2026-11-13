@@ -102,7 +102,7 @@ export function MessagePerformanceChart({ data }: { data: MessagePerformancePoin
 
       {/* Accessible table equivalent of the chart */}
       <table className="sr-only">
-        <caption>Daily messages sent, delivered and read (sample data)</caption>
+        <caption>Daily messages sent, delivered and read </caption>
         <thead>
           <tr>
             <th scope="col">Date</th>

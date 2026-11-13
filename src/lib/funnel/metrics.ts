@@ -36,8 +36,10 @@ export type FunnelMetrics = {
 const isDelivered = (m: MessageRecord) => m.status === "delivered" || m.status === "read";
 
 export function computeFunnelMetrics(recipients: RecipientProgress[]): FunnelMetrics {
-  const started = recipients.filter((r) => r.messages.length > 0);
-  const messages = recipients.flatMap((r) => r.messages);
+  // Queued messages haven't been accepted by WhatsApp yet — they are not "sent".
+  const accepted = (r: RecipientProgress) => r.messages.filter((m) => m.status !== "queued");
+  const started = recipients.filter((r) => accepted(r).length > 0);
+  const messages = recipients.flatMap(accepted);
   const steps = ([1, 2, 3] as FunnelStep[]).map((step) => {
     const ms = messages.filter((m) => m.step === step);
     return {
@@ -53,7 +55,7 @@ export function computeFunnelMetrics(recipients: RecipientProgress[]): FunnelMet
     (a, s) => ({ sent: a.sent + s.sent, delivered: a.delivered + s.delivered, read: a.read + s.read, failed: a.failed + s.failed, clicked: a.clicked + s.clicked }),
     { sent: 0, delivered: 0, read: 0, failed: 0, clicked: 0 },
   );
-  const deliveredRecipients = started.filter((r) => r.messages.some(isDelivered));
+  const deliveredRecipients = started.filter((r) => accepted(r).some(isDelivered));
   const emptyBranches = () => Object.fromEntries(BRANCHES.map((b) => [b, 0])) as Record<Branch, number>;
   const branches = { 2: emptyBranches(), 3: emptyBranches() };
   for (const m of messages) if ((m.step === 2 || m.step === 3) && m.branch) branches[m.step][m.branch]++;

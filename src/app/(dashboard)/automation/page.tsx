@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { FunnelsOverview } from "@/components/funnel/funnels-overview";
+import { AutomationsManager } from "@/components/automation/automations-manager";
 
-export const metadata: Metadata = { title: "Funnels" };
+export const metadata: Metadata = { title: "Automation" };
 
 export default function AutomationPage() {
-  return <FunnelsOverview />;
+  return <AutomationsManager />;
 }

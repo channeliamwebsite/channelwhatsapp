@@ -24,16 +24,13 @@ function DeliveryRate({ campaign }: { campaign: RecentCampaign }) {
 
 export function RecentCampaigns({
   campaigns,
-  sample = false,
 }: {
   campaigns: RecentCampaign[];
-  sample?: boolean;
 }) {
   return (
     <DashboardCard
       title="Recent campaigns"
       description="Latest broadcasts and their delivery performance"
-      sample={sample}
       action={
         <Link
           href="/campaigns"
@@ -45,6 +42,7 @@ export function RecentCampaigns({
       }
       contentClassName="px-0 pb-2"
     >
+      {campaigns.length === 0 && <p className="px-5 py-8 text-center text-sm text-muted-foreground">No campaigns launched yet.</p>}
       {/* Table on md+ */}
       <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[720px] text-sm">

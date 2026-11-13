@@ -8,16 +8,13 @@ import { DashboardCard } from "./dashboard-card";
 
 export function ScheduledCampaigns({
   campaigns,
-  sample = false,
 }: {
   campaigns: ScheduledCampaign[];
-  sample?: boolean;
 }) {
   return (
     <DashboardCard
       title="Scheduled campaigns"
       description="Upcoming broadcasts in the queue"
-      sample={sample}
       action={
         <Link href="/campaigns" className="text-xs font-semibold text-primary underline-offset-4 hover:underline">
           View calendar

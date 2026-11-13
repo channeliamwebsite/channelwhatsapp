@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2, Clock, Eye, EyeOff, Lock, LogOut, MessageS
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import { BRANCHES, BRANCH_LABEL, LOCKED_EXIT_BRANCHES } from "@/lib/funnel/engine";
+import { BRANCHES, BRANCH_LABEL, lockedExitBranches } from "@/lib/funnel/engine";
 import { WAIT_LIMITS } from "@/lib/funnel/validate";
 import { cn, formatNumber } from "@/lib/utils";
 import type { Branch, BranchAction, FunnelDefinition } from "@/types/campaign";
@@ -59,6 +59,7 @@ export function FunnelBuilder({ value, templates, onChange, counts }: Props) {
         approved={approved}
         readOnly={readOnly}
         counts={counts?.m2}
+        exitOnReply={value.exitOnReply}
         onChange={(message2) => set({ message2 })}
       />
       <Connector />
@@ -72,13 +73,20 @@ export function FunnelBuilder({ value, templates, onChange, counts }: Props) {
         approved={approved}
         readOnly={readOnly}
         counts={counts?.m3}
+        exitOnReply={value.exitOnReply}
         onChange={(message3) => set({ message3 })}
       />
       <Connector />
       <section aria-label="Exit conditions" className="rounded-xl border border-border bg-card p-4">
         <h3 className="flex items-center gap-2 text-sm font-semibold"><LogOut className="size-4 text-primary" aria-hidden="true" /> Exit conditions — checked before every message</h3>
         <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-          <ExitRow label="Customer replies" hint="Hand over to Conversations" locked />
+          <li className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2">
+            <Checkbox id="exitOnReply" checked={value.exitOnReply} disabled={readOnly} onChange={(e) => set({ exitOnReply: e.target.checked, message2: { ...value.message2, replied: { type: "exit" } }, message3: { ...value.message3, replied: { type: "exit" } } })} />
+            <label htmlFor="exitOnReply" className="flex-1">
+              Customer replies
+              <span className="block text-[11px] text-muted-foreground">Off = use the “Replied” branch instead</span>
+            </label>
+          </li>
           <ExitRow label="Customer opts out" hint="Contact marked opted out everywhere" locked />
           <li className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2">
             <Checkbox id="exitOnConversion" checked={value.exitOnConversion} disabled={readOnly} onChange={(e) => set({ exitOnConversion: e.target.checked })} />
@@ -87,11 +95,18 @@ export function FunnelBuilder({ value, templates, onChange, counts }: Props) {
               <span className="block text-[11px] text-muted-foreground">Stop follow-ups once the goal is met</span>
             </label>
           </li>
-          <ExitRow label="Campaign is stopped" hint="All recipients leave the funnel" locked />
+          <ExitRow label="Campaign is cancelled" hint="All recipients leave the funnel" locked />
         </ul>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Retry failed sends</span>
+          <Input aria-label="Retry attempts" type="number" min={0} max={5} value={value.retry.maxAttempts} disabled={readOnly} onChange={(e) => set({ retry: { ...value.retry, maxAttempts: Number(e.target.value) } })} className="h-8 w-16 text-right" />
+          <span className="text-muted-foreground">times, every</span>
+          <Input aria-label="Retry delay in minutes" type="number" min={1} max={1440} value={value.retry.delayMinutes} disabled={readOnly} onChange={(e) => set({ retry: { ...value.retry, delayMinutes: Number(e.target.value) } })} className="h-8 w-20 text-right" />
+          <span className="text-muted-foreground">minutes (temporary errors only)</span>
+        </div>
         <p className="mt-3 flex items-start gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden="true" />
-          Only opted-in contacts with recorded consent are messaged. Every message uses an approved template (allowed outside the 24-hour window) and is sent at most once per recipient.
+          Only opted-in contacts with recorded consent are messaged. Every message uses an approved template (allowed outside the 24-hour window), each step is sent at most once per recipient, and behaviour comes only from real WhatsApp delivery, read, click and reply events.
         </p>
       </section>
     </div>
@@ -197,7 +212,8 @@ function CountPill({ count }: { count: number }) {
   );
 }
 
-function BranchGrid({ step, title, actions, templates, approved, readOnly, counts, onChange }: {
+function BranchGrid({ step, title, actions, templates, approved, readOnly, counts, onChange, exitOnReply }: {
+  exitOnReply: boolean;
   step: 2 | 3; title: string; actions: Record<Branch, BranchAction>; templates: WhatsAppTemplate[]; approved: WhatsAppTemplate[]; readOnly: boolean; counts?: Record<Branch, number>; onChange: (a: Record<Branch, BranchAction>) => void;
 }) {
   return (
@@ -210,7 +226,7 @@ function BranchGrid({ step, title, actions, templates, approved, readOnly, count
         {BRANCHES.map((b) => {
           const Icon = BRANCH_ICON[b];
           const action = actions[b];
-          const locked = LOCKED_EXIT_BRANCHES.includes(b);
+          const locked = lockedExitBranches({ exitOnReply }).includes(b);
           const id = `step${step}-${b}`;
           const selected = action.type === "send" ? templates.find((t) => t.id === action.templateId) : undefined;
           return (

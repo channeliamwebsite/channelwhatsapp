@@ -3,10 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, FastForward, Link2, Pause, Play, RefreshCw, Rocket, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Link2, Pause, Play, RefreshCw, Rocket, Square, Trash2 } from "lucide-react";
 
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
-import { SampleDataBadge } from "@/components/dashboard/sample-data-badge";
 import { FunnelBuilder } from "@/components/funnel/funnel-builder";
 import { BranchBreakdown, ExitBreakdown, FunnelKpis, FunnelProgression } from "@/components/funnel/funnel-metrics";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +18,6 @@ import { PaginationBar } from "@/components/ui/pagination-bar";
 import { useToast } from "@/components/ui/toast";
 import { BRANCH_LABEL, EXIT_LABEL } from "@/lib/funnel/engine";
 import { computeFunnelMetrics } from "@/lib/funnel/metrics";
-import { fastForwardCampaign, launchCampaign, setCampaignStatus, stopCampaign } from "@/lib/funnel/simulate";
 import { validateFunnel } from "@/lib/funnel/validate";
 import { useHub } from "@/lib/store/hub-store";
 import { cn, formatDate, formatNumber } from "@/lib/utils";
@@ -32,7 +30,7 @@ type Tab = (typeof TABS)[number];
 const dateTime = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
 export function CampaignDetail({ campaignId }: { campaignId: string }) {
-  const { workspace, data, update } = useHub();
+  const { workspace, data, update, campaignAction } = useHub();
   const router = useRouter();
   const { toast, toastElement } = useToast();
   const [tab, setTab] = React.useState<Tab>("Overview");
@@ -45,7 +43,7 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
     return (
       <Card className="items-center px-6 py-16 text-center">
         <p className="text-sm font-semibold">Campaign not found in {workspace.name}</p>
-        <p className="mt-1 text-sm text-muted-foreground">It may belong to another workspace, or the mock data was reset by a reload.</p>
+        <p className="mt-1 text-sm text-muted-foreground">It may belong to another workspace or have been deleted.</p>
         <Link href="/campaigns" className="mt-4 text-sm font-semibold text-primary hover:underline">Back to campaigns</Link>
       </Card>
     );
@@ -54,7 +52,9 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
   const editable = ["draft", "scheduled", "paused"].includes(campaign.status);
   const problems = validateFunnel(campaign.funnel, data.templates);
   const accountReady = workspace.whatsappAccount.status === "connected";
-  const now = () => new Date().toISOString();
+  const run = async (action: "launch" | "pause" | "resume" | "stop", message: string) => {
+    if (await campaignAction(campaign.id, action)) toast(message);
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -66,42 +66,37 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         <div className="min-w-0">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <CampaignStatusBadge status={campaign.status} />
-            <SampleDataBadge label="Simulated" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">{campaign.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {campaign.audienceGroups.join(", ") || "No audience"} · {campaign.launchedAt ? `launched ${formatDate(campaign.launchedAt)}` : campaign.scheduledAt ? `scheduled ${dateTime.format(new Date(campaign.scheduledAt))}` : "not launched"}
-            {campaign.clock && campaign.status !== "completed" && ` · mock clock ${dateTime.format(new Date(campaign.clock))}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {(campaign.status === "draft" || campaign.status === "scheduled") && (
             <>
-              <Button variant="outline" size="lg" className="bg-card" onClick={() => setConfirm({ title: "Delete this campaign?", description: "The campaign and its funnel settings will be removed.", confirmLabel: "Delete", destructive: true, onConfirm: () => { update((d) => ({ ...d, campaigns: d.campaigns.filter((c) => c.id !== campaign.id) })); router.push("/campaigns"); } })}>
+              <Button variant="outline" size="lg" className="bg-card" onClick={() => setConfirm({ title: "Delete this campaign?", description: "The campaign and its funnel settings will be removed.", confirmLabel: "Delete", destructive: true, onConfirm: async () => { if (await update((d) => ({ ...d, campaigns: d.campaigns.filter((c) => c.id !== campaign.id) }))) router.push("/campaigns"); } })}>
                 <Trash2 aria-hidden="true" /> Delete
               </Button>
-              <Button size="lg" disabled={problems.length > 0 || !accountReady || !campaign.audienceGroups.length} onClick={() => { update((d) => launchCampaign(d, campaign.id, now())); toast("Campaign launched — Message 1 simulated"); }}>
+              <Button size="lg" disabled={problems.length > 0 || !accountReady || !campaign.audienceGroups.length} onClick={() => run("launch", "Campaign launched — recipients queued for sending")}>
                 <Rocket aria-hidden="true" /> Launch now
               </Button>
             </>
           )}
           {campaign.status === "running" && (
             <>
-              <Button variant="outline" size="lg" className="bg-card" onClick={() => { update((d) => fastForwardCampaign(d, campaign.id)); toast("Advanced to the next funnel step"); }}>
-                <FastForward aria-hidden="true" /> Fast-forward (mock)
-              </Button>
-              <Button variant="outline" size="lg" className="bg-card" onClick={() => { update((d) => setCampaignStatus(d, campaign.id, "paused")); toast("Campaign paused — no messages will be sent"); }}>
+              <Button variant="outline" size="lg" className="bg-card" onClick={() => run("pause", "Campaign paused — no messages will be sent")}>
                 <Pause aria-hidden="true" /> Pause
               </Button>
             </>
           )}
           {campaign.status === "paused" && (
-            <Button size="lg" disabled={problems.length > 0} onClick={() => { update((d) => setCampaignStatus(d, campaign.id, "running")); toast("Campaign resumed"); }}>
+            <Button size="lg" disabled={problems.length > 0} onClick={() => run("resume", "Campaign resumed")}>
               <Play aria-hidden="true" /> Resume
             </Button>
           )}
           {(campaign.status === "running" || campaign.status === "paused") && (
-            <Button variant="destructive" size="lg" onClick={() => setConfirm({ title: "Stop this campaign?", description: `${formatNumber(metrics.waiting)} recipients still in the funnel will exit. Stopped campaigns cannot be resumed.`, confirmLabel: "Stop campaign", destructive: true, onConfirm: () => { update((d) => stopCampaign(d, campaign.id, now())); toast("Campaign stopped"); } })}>
+            <Button variant="destructive" size="lg" onClick={() => setConfirm({ title: "Stop this campaign?", description: `${formatNumber(metrics.waiting)} recipients still in the funnel will exit. Stopped campaigns cannot be resumed.`, confirmLabel: "Stop campaign", destructive: true, onConfirm: () => run("stop", "Campaign stopped") })}>
               <Square aria-hidden="true" /> Stop
             </Button>
           )}
@@ -120,10 +115,10 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         <div className="flex flex-col gap-6">
           <FunnelKpis metrics={metrics} />
           <div className="grid gap-6 xl:grid-cols-2">
-            <DashboardCard title="Funnel progression" description="How far recipients have travelled" sample>
+            <DashboardCard title="Funnel progression" description="How far recipients have travelled">
               <FunnelProgression metrics={metrics} />
             </DashboardCard>
-            <DashboardCard title="Behaviour branches" description="Which follow-up each recipient received" sample>
+            <DashboardCard title="Behaviour branches" description="Which follow-up each recipient received">
               <BranchBreakdown metrics={metrics} />
               <div className="mt-5 border-t border-border pt-4">
                 <p className="mb-2 text-xs font-semibold">Exit reasons</p>
@@ -245,7 +240,6 @@ function LinkTrackingPanel({ workspaceId, campaignId, recipients }: { workspaceI
     setError("");
     setLink("");
     const res = await fetch("/api/tracking/links", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ workspaceId, campaignId, contactId, step, url }) });
-    if (res.status === 404) return setError("The test link tool is only available in development.");
     const body = await res.json();
     if (!res.ok) return setError(body.error ?? "Could not create link");
     setLink(body.url);
@@ -254,7 +248,7 @@ function LinkTrackingPanel({ workspaceId, campaignId, recipients }: { workspaceI
   async function refresh() {
     const res = await fetch(`/api/tracking/clicks?workspaceId=${encodeURIComponent(workspaceId)}&campaignId=${encodeURIComponent(campaignId)}`);
     if (res.ok) setClicks((await res.json()).clicks);
-    else setError("Click log is only available in development.");
+    else setError((await res.json().catch(() => ({}))).error ?? "Could not load clicks.");
   }
 
   return (

@@ -8,16 +8,13 @@ import { DashboardCard } from "./dashboard-card";
 
 export function AudienceDistribution({
   audience,
-  sample = false,
 }: {
   audience: AudienceOverview;
-  sample?: boolean;
 }) {
   return (
     <DashboardCard
       title="Audience distribution"
       description={`${formatPercent(percentOf(audience.optedIn, audience.totalContacts))} opted in · +${formatNumber(audience.newThisMonth)} this month`}
-      sample={sample}
       action={
         <Link href="/audience-groups" className="text-xs font-semibold text-primary underline-offset-4 hover:underline">
           Manage
@@ -25,7 +22,11 @@ export function AudienceDistribution({
       }
       contentClassName="pt-4"
     >
-      <AudienceDistributionChart segments={audience.segments} />
+      {audience.totalContacts === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">No contacts added yet.</p>
+      ) : (
+        <AudienceDistributionChart segments={audience.segments} />
+      )}
     </DashboardCard>
   );
 }

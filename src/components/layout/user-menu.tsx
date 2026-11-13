@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, CircleHelp, LogOut, Settings, User } from "lucide-react";
+import { ChevronDown, LogOut, Settings } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -11,7 +11,9 @@ import {
   DropdownSeparator,
   DropdownTrigger,
 } from "@/components/ui/dropdown";
-import type { WorkspaceUser } from "@/lib/mock-data/workspace";
+import { api } from "@/lib/client/api";
+
+export type WorkspaceUser = { name: string; email: string; role: string };
 
 export function UserMenu({ user }: { user: WorkspaceUser }) {
   const initials = user.name
@@ -46,10 +48,6 @@ export function UserMenu({ user }: { user: WorkspaceUser }) {
           </div>
         </div>
         <DropdownSeparator />
-        <DropdownItem disabled>
-          <User aria-hidden="true" />
-          Profile
-        </DropdownItem>
         <Link
           href="/settings"
           role="menuitem"
@@ -58,12 +56,15 @@ export function UserMenu({ user }: { user: WorkspaceUser }) {
           <Settings className="size-4 text-muted-foreground" aria-hidden="true" />
           Settings
         </Link>
-        <DropdownItem disabled>
-          <CircleHelp aria-hidden="true" />
-          Help & support
-        </DropdownItem>
         <DropdownSeparator />
-        <DropdownItem disabled className="text-destructive">
+        <DropdownItem
+          className="text-destructive"
+          onClick={async () => {
+            await api("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- full reload so the server re-checks the session
+      window.location.assign("/login");
+          }}
+        >
           <LogOut aria-hidden="true" className="text-destructive!" />
           Sign out
         </DropdownItem>

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { ModulePlaceholder } from "@/components/dashboard/module-placeholder";
+import { ReportsView } from "@/components/reports/reports-view";
 
 export const metadata: Metadata = { title: "Reports" };
 
 export default function ReportsPage() {
-  return <ModulePlaceholder href="/reports" />;
+  return <ReportsView />;
 }

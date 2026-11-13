@@ -8,6 +8,7 @@ import {
   Settings,
   Smartphone,
   Building2,
+  Filter,
   UsersRound,
   Workflow,
   type LucideIcon,
@@ -38,14 +39,15 @@ export const navSections: NavSection[] = [
     label: "Audience",
     items: [
       { title: "Contacts", href: "/contacts", icon: Contact, description: "Manage contacts and opt-in status." },
-      { title: "Audience Groups", href: "/audience-groups", icon: UsersRound, description: "Segment contacts into reusable groups." },
+      { title: "Audience", href: "/audience-groups", icon: UsersRound, description: "Groups, tags and saved segments." },
     ],
   },
   {
     label: "Messaging",
     items: [
       { title: "Templates", href: "/templates", icon: FileText, description: "Create and manage approved message templates." },
-      { title: "Funnels", href: "/automation", icon: Workflow, description: "Three-message behaviour funnels across campaigns." },
+      { title: "Funnels", href: "/funnels", icon: Filter, description: "Three-message behaviour funnels across campaigns." },
+      { title: "Automation", href: "/automation", icon: Workflow, description: "Trigger-based workflows." },
       { title: "Reports", href: "/reports", icon: BarChart3, description: "Delivery, engagement and team reports." },
     ],
   },

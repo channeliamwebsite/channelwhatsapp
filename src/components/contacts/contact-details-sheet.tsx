@@ -10,6 +10,7 @@ import { findMatches } from "@/lib/contacts/duplicates";
 import { getIneligibleReason, ineligibleReasonLabel } from "@/lib/contacts/eligibility";
 import { formatPhone, isValidPhone } from "@/lib/contacts/phone";
 import { formatDate } from "@/lib/utils";
+import type { ActivityEvent } from "@/types/activity";
 import type { Contact } from "@/types/contact";
 
 import { OptInBadge } from "./opt-in-badge";
@@ -17,6 +18,7 @@ import { OptInBadge } from "./opt-in-badge";
 type Props = {
   contact: Contact | null;
   contacts: Contact[];
+  activity: ActivityEvent[];
   onClose: () => void;
   onEdit: (c: Contact) => void;
   onDelete: (c: Contact) => void;
@@ -25,15 +27,15 @@ type Props = {
   onCopied: (text: string) => void;
 };
 
-export function ContactDetailsSheet({ contact, contacts, onClose, onEdit, onDelete, onOptOut, onReviewDuplicates, onCopied }: Props) {
+export function ContactDetailsSheet({ contact, contacts, activity, onClose, onEdit, onDelete, onOptOut, onReviewDuplicates, onCopied }: Props) {
   return (
     <Dialog open={contact !== null} onOpenChange={(o) => !o && onClose()} side="right" aria-label="Contact details">
-      {contact && <Details {...{ contact, contacts, onClose, onEdit, onDelete, onOptOut, onReviewDuplicates, onCopied }} />}
+      {contact && <Details {...{ contact, contacts, activity, onClose, onEdit, onDelete, onOptOut, onReviewDuplicates, onCopied }} />}
     </Dialog>
   );
 }
 
-function Details({ contact, contacts, onClose, onEdit, onDelete, onOptOut, onReviewDuplicates, onCopied }: Props & { contact: Contact }) {
+function Details({ contact, contacts, activity, onClose, onEdit, onDelete, onOptOut, onReviewDuplicates, onCopied }: Props & { contact: Contact }) {
   const reason = getIneligibleReason(contact);
   const dup = findMatches(contacts, contact, contact.id);
   const duplicate = dup.phone ?? dup.email;
@@ -103,7 +105,42 @@ function Details({ contact, contacts, onClose, onEdit, onDelete, onOptOut, onRev
         <Section title="Audience groups" items={contact.audienceGroups} />
         <Section title="Tags" items={contact.tags} />
 
-        <p className="text-xs text-muted-foreground">Created {formatDate(contact.createdAt)} · ID {contact.id}</p>
+        {Object.keys(contact.customFields ?? {}).length > 0 && (
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+            {Object.entries(contact.customFields!).map(([k, v]) => (
+              <React.Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd className="break-words">{v || "—"}</dd></React.Fragment>
+            ))}
+          </dl>
+        )}
+
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Consent history</p>
+          {contact.consentHistory?.length ? (
+            <ol className="flex flex-col gap-1 text-xs">
+              {[...contact.consentHistory].reverse().map((h, i) => (
+                <li key={i}><span className="font-medium">{h.status.replace("_", " ")}</span> · {h.source} · {formatDate(h.at)}</li>
+              ))}
+            </ol>
+          ) : <p className="text-sm text-muted-foreground">No changes recorded yet.</p>}
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {contact.countryCode && `Country code +${contact.countryCode} · `}
+            {contact.optedInAt && `Opted in ${formatDate(contact.optedInAt)} · `}
+            {contact.optedOutAt && `Opted out ${formatDate(contact.optedOutAt)}`}
+          </p>
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Activity</p>
+          {activity.filter((a) => a.contactId === contact.id).length ? (
+            <ol className="flex flex-col gap-1 text-xs">
+              {activity.filter((a) => a.contactId === contact.id).slice(0, 20).map((a) => (
+                <li key={a.id}>{a.message} · <span className="text-muted-foreground">{formatDate(a.at)}</span></li>
+              ))}
+            </ol>
+          ) : <p className="text-sm text-muted-foreground">No activity yet.</p>}
+        </div>
+
+        <p className="text-xs text-muted-foreground">Created {formatDate(contact.createdAt)}{contact.updatedAt && ` · Updated ${formatDate(contact.updatedAt)}`} · ID {contact.id}</p>
       </DialogBody>
       <DialogFooter className="sm:justify-between">
         <Button variant="ghost" size="lg" className="text-destructive hover:bg-accent hover:text-destructive" onClick={() => onDelete(contact)}>

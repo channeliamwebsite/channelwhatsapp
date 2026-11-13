@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { ModulePlaceholder } from "@/components/dashboard/module-placeholder";
+import { ConversationsInbox } from "@/components/conversations/conversations-inbox";
 
 export const metadata: Metadata = { title: "Conversations" };
 
 export default function ConversationsPage() {
-  return <ModulePlaceholder href="/conversations" />;
+  return <ConversationsInbox />;
 }

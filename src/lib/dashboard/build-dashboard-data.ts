@@ -1,11 +1,10 @@
 /**
- * Builds the overview dashboard for one workspace from its (mock) store data,
+ * Builds the overview dashboard for one workspace from its Firestore data,
  * so every figure is consistent with that workspace's contacts and funnels.
  */
 import { isCampaignEligible } from "@/lib/contacts/eligibility";
 import { computeFunnelMetrics } from "@/lib/funnel/metrics";
-import { audienceContacts } from "@/lib/funnel/simulate";
-import { MOCK_NOW } from "@/lib/mock-data/workspaces";
+import { audienceContacts } from "@/lib/funnel/engine";
 import type { WorkspaceData } from "@/lib/store/hub-store";
 import type { Campaign } from "@/types/campaign";
 import type { CampaignStatus, DashboardData, MessagePerformancePoint } from "@/types/dashboard";
@@ -18,15 +17,20 @@ const time = new Intl.DateTimeFormat("en-IN", { hour: "numeric", minute: "2-digi
 const istDate = (iso: string) => new Date(new Date(iso).getTime() + 5.5 * 3_600_000).toISOString().slice(0, 10);
 
 const statusMap: Record<Campaign["status"], CampaignStatus> = {
-  draft: "draft", scheduled: "scheduled", running: "sending", paused: "paused", completed: "completed", stopped: "stopped",
+  draft: "draft", scheduled: "scheduled", running: "sending", paused: "paused", completed: "completed", stopped: "stopped", failed: "failed",
 };
 
-export function buildDashboardData(workspace: Workspace, data: WorkspaceData, firstName: string): DashboardData {
-  const all = computeFunnelMetrics(data.recipients);
-  const now = new Date(MOCK_NOW).getTime();
+export function buildDashboardData(workspace: Workspace, data: WorkspaceData, nowMs: number, rangeDays = 14): DashboardData {
+  const now = nowMs;
 
   // Daily sent/delivered/read for the last 14 days, from recipient messages.
-  const days = Array.from({ length: 14 }, (_, i) => istDate(new Date(now - (13 - i) * DAY).toISOString()));
+  const days = Array.from({ length: rangeDays }, (_, i) => istDate(new Date(now - (rangeDays - 1 - i) * DAY).toISOString()));
+  const from = days[0];
+  const inRange = (iso?: string) => Boolean(iso && istDate(iso) >= from);
+  // Only recipients with real message records count; nothing is estimated.
+  const all = computeFunnelMetrics(data.recipients.map((r) => ({ ...r, messages: r.messages.filter((m) => inRange(m.sentAt)), repliedAt: inRange(r.repliedAt) ? r.repliedAt : undefined, convertedAt: inRange(r.convertedAt) ? r.convertedAt : undefined })));
+  const growth = new Map(days.map((d) => [d, 0]));
+  for (const c of data.contacts) { const d = istDate(c.createdAt); if (growth.has(d)) growth.set(d, growth.get(d)! + 1); }
   const byDay = new Map(days.map((d) => [d, { sent: 0, delivered: 0, read: 0 }]));
   for (const m of data.recipients.flatMap((r) => r.messages)) {
     const bucket = byDay.get(istDate(m.sentAt));
@@ -44,20 +48,21 @@ export function buildDashboardData(workspace: Workspace, data: WorkspaceData, fi
     const primary = c.audienceGroups[0] ?? "No group";
     groupCounts.set(primary, (groupCounts.get(primary) ?? 0) + 1);
   }
-  const monthPrefix = MOCK_NOW.slice(0, 7);
+  const monthPrefix = istDate(new Date(now).toISOString()).slice(0, 7);
 
   return {
-    source: "mock",
-    isMockData: true,
-    user: { firstName },
-    periodLabel: "Last 14 days",
+    periodLabel: `Last ${rangeDays} days`,
+    contactGrowth: days.map((d) => ({ date: d, label: dayLabel.format(new Date(`${d}T12:00:00Z`)), contacts: growth.get(d)! })),
     stats: [
       { id: "contacts", label: "Total contacts", value: data.contacts.length, positiveIsGood: true, helper: `${data.contacts.filter(isCampaignEligible).length} campaign eligible` },
-      { id: "campaigns", label: "Total campaigns", value: data.campaigns.length, positiveIsGood: true, helper: `${data.campaigns.filter((c) => c.status === "running").length} running now` },
+      { id: "campaigns", label: "Total campaigns", value: data.campaigns.length, positiveIsGood: true, helper: `${data.campaigns.filter((c) => c.status === "draft").length} drafts` },
+      { id: "active", label: "Active campaigns", value: data.campaigns.filter((c) => c.status === "running").length, positiveIsGood: true, helper: `${data.campaigns.filter((c) => c.status === "paused").length} paused` },
+      { id: "completed", label: "Completed campaigns", value: data.campaigns.filter((c) => c.status === "completed").length, positiveIsGood: true, helper: "All time" },
       { id: "sent", label: "Messages sent", value: all.totals.sent, positiveIsGood: true, helper: "Across all funnel steps" },
       { id: "delivered", label: "Delivered", value: all.totals.delivered, positiveIsGood: true, helper: "of messages sent" },
       { id: "read", label: "Read", value: all.totals.read, positiveIsGood: true, helper: "of messages delivered" },
       { id: "failed", label: "Failed", value: all.totals.failed, positiveIsGood: false, helper: "of messages sent" },
+      { id: "replies", label: "Replies", value: all.replied, positiveIsGood: true, helper: "Recipients who replied" },
     ],
     performance,
     recentCampaigns: launched.slice(0, 5).map((c) => {
@@ -90,23 +95,14 @@ export function buildDashboardData(workspace: Workspace, data: WorkspaceData, fi
       newThisMonth: data.contacts.filter((c) => c.createdAt.startsWith(monthPrefix)).length,
       segments: [...groupCounts].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, contacts]) => ({ id: name, name, contacts })),
     },
-    activity: launched.slice(0, 6).map((c, i) => {
-      const m = computeFunnelMetrics(recipientsOf(c.id));
-      return {
-        id: `act_${c.id}`,
-        type: c.status === "completed" ? "campaign_completed" : "campaign_scheduled",
-        actor: "Funnel",
-        message: `${c.name}: ${m.totals.sent} messages, ${m.replied} replies, ${m.converted} conversions`,
-        timeLabel: i === 0 ? "Latest" : dayLabel.format(new Date(c.launchedAt!)),
-      };
-    }),
+    activity: data.activity.slice(0, 8),
     whatsappAccount: {
       status: workspace.whatsappAccount.status,
       businessName: workspace.whatsappAccount.displayName,
       displayNumber: workspace.whatsappAccount.phoneNumber,
       qualityRating: workspace.whatsappAccount.qualityRating,
       messagingLimit: workspace.whatsappAccount.messagingLimit,
-      lastSyncedLabel: "Sample data — not synced",
+      lastSyncedLabel: workspace.whatsappAccount.status === "connected" ? "Connected" : "Not connected",
     },
   };
 }

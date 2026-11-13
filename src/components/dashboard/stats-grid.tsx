@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCheck, Contact, Eye, Megaphone, Send, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCheck, CircleCheckBig, Contact, Eye, Megaphone, MessageSquareReply, PlayCircle, Send, type LucideIcon } from "lucide-react";
 
 import type { DashboardStat } from "@/types/dashboard";
 import { formatPercent, percentOf } from "@/lib/utils";
@@ -11,6 +11,9 @@ const statMeta: Record<
 > = {
   contacts: { icon: Contact, tone: "neutral" },
   campaigns: { icon: Megaphone, tone: "neutral" },
+  active: { icon: PlayCircle, tone: "brand" },
+  completed: { icon: CircleCheckBig, tone: "success" },
+  replies: { icon: MessageSquareReply, tone: "info" },
   sent: { icon: Send, tone: "brand" },
   delivered: { icon: CheckCheck, tone: "success" },
   read: { icon: Eye, tone: "info" },
@@ -33,7 +36,7 @@ export function StatsGrid({ stats }: { stats: DashboardStat[] }) {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 2xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-5">
       {stats.map((stat) => (
         <StatCard
           key={stat.id}

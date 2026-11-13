@@ -10,7 +10,6 @@ import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownTrigger
 import { PaginationBar } from "@/components/ui/pagination-bar";
 import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { SampleDataBadge } from "@/components/dashboard/sample-data-badge";
 import { findDuplicateGroups, mergeContacts } from "@/lib/contacts/duplicates";
 import { isCampaignEligible } from "@/lib/contacts/eligibility";
 import { exportContacts } from "@/lib/contacts/export";
@@ -84,7 +83,7 @@ function applyImportUpdate(existing: Contact, input: ContactInput): Contact {
   };
 }
 
-export function ContactsManager({ isMockData }: { isMockData: boolean }) {
+export function ContactsManager({ initialViewId = null }: { initialViewId?: string | null }) {
   const { workspace, data } = useHub();
   const [contacts, setContacts] = useWorkspaceContacts();
   const [filters, setFilters] = React.useState(EMPTY_FILTERS);
@@ -94,7 +93,7 @@ export function ContactsManager({ isMockData }: { isMockData: boolean }) {
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
 
   const [form, setForm] = React.useState<{ contact?: Contact; today: string } | null>(null);
-  const [viewId, setViewId] = React.useState<string | null>(null);
+  const [viewId, setViewId] = React.useState<string | null>(initialViewId);
   const [importToday, setImportToday] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmOptions | null>(null);
   const [eligibilityFor, setEligibilityFor] = React.useState<Contact[] | null>(null);
@@ -103,7 +102,7 @@ export function ContactsManager({ isMockData }: { isMockData: boolean }) {
   const { toast, toastElement } = useToast();
 
   const groups = React.useMemo(() => [...new Set([...data.audienceGroups.map((g) => g.name), ...contacts.flatMap((c) => c.audienceGroups)])].sort(), [data.audienceGroups, contacts]);
-  const tags = React.useMemo(() => [...new Set(contacts.flatMap((c) => c.tags))].sort(), [contacts]);
+  const tags = React.useMemo(() => [...new Set([...data.tags.map((t) => t.name), ...contacts.flatMap((c) => c.tags)])].sort(), [data.tags, contacts]);
 
   const filtered = React.useMemo(() => {
     const list = contacts.filter((c) => matchesFilters(c, filters));
@@ -179,7 +178,7 @@ export function ContactsManager({ isMockData }: { isMockData: boolean }) {
       confirmLabel: "Mark opted out",
       onConfirm: () => {
         updateMany(ids, (c) =>
-          c.optInStatus === "opted_out" ? c : { ...c, optInStatus: "opted_out", consentSource: "Manual entry", consentDate: today },
+          c.optInStatus === "opted_out" ? c : { ...c, optInStatus: "opted_out", consentDate: today }, // consent source kept; server records history
         );
         toast(`${label[0].toUpperCase()}${label.slice(1)} marked as opted out`);
       },
@@ -210,7 +209,6 @@ export function ContactsManager({ isMockData }: { isMockData: boolean }) {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow={isMockData ? <SampleDataBadge /> : undefined}
         title="Contacts"
         description={`WhatsApp contacts, consent and audience groups for ${workspace.name}.`}
         actions={
@@ -278,6 +276,10 @@ export function ContactsManager({ isMockData }: { isMockData: boolean }) {
               updateMany(selected, (c) => (c.audienceGroups.includes(g) ? c : { ...c, audienceGroups: [...c.audienceGroups, g] }));
               toast(`Added ${plural(selected.size, "contact")} to ${g}`);
             }}
+            onRemoveFromGroup={(g) => {
+              updateMany(selected, (c) => ({ ...c, audienceGroups: c.audienceGroups.filter((x) => x !== g) }));
+              toast(`Removed ${plural(selected.size, "contact")} from ${g}`);
+            }}
             onAddTag={(t) => {
               updateMany(selected, (c) => (c.tags.includes(t) ? c : { ...c, tags: [...c.tags, t] }));
               toast(`Tagged ${plural(selected.size, "contact")} “${t}”`);
@@ -338,6 +340,7 @@ export function ContactsManager({ isMockData }: { isMockData: boolean }) {
       <ContactDetailsSheet
         contact={form ? null : viewing}
         contacts={contacts}
+        activity={data.activity}
         onClose={() => setViewId(null)}
         onEdit={(c) => setForm({ contact: c, today: todayISO() })}
         onDelete={(c) => confirmDelete(new Set([c.id]), c.fullName)}

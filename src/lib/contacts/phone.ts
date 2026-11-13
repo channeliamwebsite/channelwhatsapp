@@ -114,3 +114,9 @@ export function phoneKey(phone: string) {
   const result = validatePhone(phone);
   return result.valid ? result.e164 : phone.replace(/\D/g, "");
 }
+
+/** Country calling code for a valid number, e.g. "+919876543210" → "91" ("" if unknown). */
+export function countryCallingCode(phone: string) {
+  const result = validatePhone(phone);
+  return result.valid ? (ruleForE164(result.e164.slice(1))?.code ?? "") : "";
+}

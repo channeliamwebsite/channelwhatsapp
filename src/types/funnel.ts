@@ -1,7 +1,8 @@
 import type { Branch } from "./campaign";
 
 export type FunnelStep = 1 | 2 | 3;
-export type DeliveryStatus = "sent" | "delivered" | "read" | "failed";
+/** "queued" until the sending pipeline confirms the WhatsApp API accepted it. */
+export type DeliveryStatus = "queued" | "sent" | "delivered" | "read" | "failed";
 
 export type MessageRecord = {
   step: FunnelStep;
@@ -11,6 +12,9 @@ export type MessageRecord = {
   /** `${campaignId}:${contactId}:${step}` — a message is never sent twice. */
   dedupeKey: string;
   status: DeliveryStatus;
+  /** WhatsApp message id from the Cloud API — links webhook events to this record. */
+  waMessageId?: string;
+  attempts?: number;
   sentAt: string;
   deliveredAt?: string;
   readAt?: string;
@@ -37,6 +41,7 @@ export type RecipientProgress = {
   state: RecipientState;
   currentStep: 0 | FunnelStep;
   messages: MessageRecord[];
+  workspaceId?: string;
   repliedAt?: string;
   convertedAt?: string;
   optedOutAt?: string;

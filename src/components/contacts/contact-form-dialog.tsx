@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CircleCheck, CircleSlash, Clock } from "lucide-react";
+import { AlertTriangle, CircleCheck, CircleSlash, Clock, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogFooter, DialogHeader } from "@/components/ui/dialog";
@@ -30,7 +30,7 @@ type ContactFormDialogProps = {
 
 const EMPTY: ContactInput = {
   fullName: "", phone: "", email: "", country: "India", city: "", organisation: "", designation: "",
-  audienceGroups: [], tags: [], optInStatus: "pending", consentSource: "", consentDate: "",
+  audienceGroups: [], tags: [], optInStatus: "pending", consentSource: "", consentDate: "", customFields: {},
 };
 
 const OPT_IN_OPTIONS: { value: OptInStatus; label: string; hint: string; icon: typeof Clock }[] = [
@@ -91,6 +91,7 @@ function ContactForm({ contact, contacts, today, groups, tags, onClose, onSubmit
 
     onSubmit({
       ...form,
+      customFields: Object.fromEntries(Object.entries(form.customFields ?? {}).map(([k, v]) => [k.trim(), v.trim()]).filter(([k]) => k)),
       fullName: form.fullName.trim(),
       email: form.email.trim().toLowerCase(),
       phone: phone.valid ? phone.e164 : form.phone,
@@ -176,6 +177,21 @@ function ContactForm({ contact, contacts, today, groups, tags, onClose, onSubmit
           <Field id="tags" label="Tags" className="sm:col-span-2">
             <MultiValueInput id="tags" value={form.tags} onChange={(v) => set("tags", v)} suggestions={tags} placeholder="Type to create or pick below" />
           </Field>
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label>Custom fields</Label>
+            {Object.entries(form.customFields ?? {}).map(([key, value], i) => (
+              <div key={i} className="flex gap-2">
+                <Input aria-label="Field name" value={key} placeholder="Field" className="w-40" onChange={(e) => {
+                  const entries = Object.entries(form.customFields ?? {});
+                  entries[i] = [e.target.value, value];
+                  set("customFields", Object.fromEntries(entries));
+                }} />
+                <Input aria-label={`${key || "Field"} value`} value={value} placeholder="Value" onChange={(e) => set("customFields", { ...form.customFields, [key]: e.target.value })} />
+                <Button type="button" variant="ghost" size="icon-lg" aria-label="Remove field" onClick={() => { const next = { ...form.customFields }; delete next[key]; set("customFields", next); }}><X aria-hidden="true" /></Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" className="w-fit" disabled={"" in (form.customFields ?? {})} onClick={() => set("customFields", { ...form.customFields, "": "" })}>Add custom field</Button>
+          </div>
         </div>
 
         <fieldset className="flex flex-col gap-3 rounded-xl border border-border p-4">
