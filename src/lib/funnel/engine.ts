@@ -1,6 +1,6 @@
 /**
- * Funnel engine — pure functions shared by the mock simulator today and the
- * Cloud Functions scheduler later. No I/O, no clock reads: callers pass `now`.
+ * Funnel engine — pure functions used by the server (launch, stop, click
+ * tracking) and by the future sending scheduler. No I/O, no clock reads: callers pass `now`.
  */
 import { getIneligibleReason, ineligibleReasonLabel } from "@/lib/contacts/eligibility";
 import type { Branch, Campaign } from "@/types/campaign";
@@ -13,7 +13,7 @@ export const BRANCHES: Branch[] = ["clicked", "read_not_clicked", "not_read", "r
 export const BRANCH_LABEL: Record<Branch, string> = {
   clicked: "Link clicked",
   read_not_clicked: "Read, not clicked",
-  not_read: "Not read",
+  not_read: "No interaction",
   replied: "Replied",
   failed: "Delivery failed",
 };
@@ -28,8 +28,8 @@ export const EXIT_LABEL: Record<ExitReason, string> = {
   not_eligible: "Not eligible",
 };
 
-/** Branches whose action is fixed to "exit" for policy reasons. */
-export const LOCKED_EXIT_BRANCHES: Branch[] = ["replied"];
+/** Branches whose action is fixed to "exit": replies exit when exitOnReply is on. */
+export const lockedExitBranches = (funnel: Pick<Campaign["funnel"], "exitOnReply">): Branch[] => (funnel.exitOnReply ? ["replied"] : []);
 
 export const dedupeKey = (campaignId: string, contactId: string, step: FunnelStep) => `${campaignId}:${contactId}:${step}`;
 
@@ -93,8 +93,10 @@ export function planNextAction(progress: RecipientProgress, campaign: Campaign, 
   if (progress.currentStep === 3) return { type: "complete" };
 
   const last = progress.messages[progress.messages.length - 1];
+  // Never evaluate behaviour for a message the WhatsApp API hasn't accepted yet.
+  if (last.status === "queued") return { type: "wait" };
   const branch = classifyBehaviour(last, progress);
-  if (branch === "replied") return { type: "exit", reason: "replied" };
+  if (branch === "replied" && f.exitOnReply) return { type: "exit", reason: "replied" };
   const action = (progress.currentStep === 1 ? f.message2 : f.message3)[branch];
   if (action.type === "exit") return { type: "exit", reason: branch === "failed" ? "delivery_failed" : "no_further_message" };
   return { type: "send", step: (progress.currentStep + 1) as FunnelStep, templateId: action.templateId, branch };
@@ -115,7 +117,7 @@ export function applyEvent(progress: RecipientProgress, event: FunnelEvent, camp
   });
   switch (event.type) {
     case "reply":
-      return exit("replied", { repliedAt: event.at });
+      return campaign.funnel.exitOnReply ? exit("replied", { repliedAt: event.at }) : { ...progress, repliedAt: progress.repliedAt ?? event.at };
     case "opt_out":
       return exit("opted_out", { optedOutAt: event.at });
     case "conversion":
@@ -128,4 +130,9 @@ export function applyEvent(progress: RecipientProgress, event: FunnelEvent, camp
 /** Hours to wait after sending `step` before evaluating behaviour. */
 export function waitAfter(step: FunnelStep, campaign: Campaign) {
   return step === 1 ? campaign.funnel.wait1Hours : step === 2 ? campaign.funnel.wait2Hours : 24;
+}
+
+/** Unique contacts in any of the campaign's audience groups. */
+export function audienceContacts(contacts: Contact[], groups: string[]) {
+  return contacts.filter((c) => c.audienceGroups.some((g) => groups.includes(g)));
 }

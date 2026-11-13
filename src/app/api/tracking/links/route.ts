@@ -1,22 +1,25 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 
+import { requireAdminMutation } from "@/lib/server/auth";
+import { toErrorResponse } from "@/lib/server/errors";
 import { createTrackedToken } from "@/lib/tracking/links";
 
-/**
- * DEV ONLY — mints a tracked link for testing. Disabled in production because
- * there is no authentication yet; real links are minted by the send pipeline.
- */
+const schema = z.object({
+  workspaceId: z.string().min(1).max(120),
+  campaignId: z.string().min(1).max(120),
+  contactId: z.string().min(1).max(120),
+  step: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  url: z.string().url().max(2000),
+});
+
+/** Mint a signed tracked link (Super Admin only) — e.g. to test a funnel link. */
 export async function POST(request: NextRequest) {
-  if (process.env.NODE_ENV === "production") return new NextResponse(null, { status: 404 });
-  const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-  const step = Number(body?.step);
-  if (!body || typeof body.url !== "string" || typeof body.workspaceId !== "string" || typeof body.campaignId !== "string" || typeof body.contactId !== "string" || ![1, 2, 3].includes(step)) {
-    return NextResponse.json({ error: "workspaceId, campaignId, contactId, step (1-3) and url are required" }, { status: 400 });
-  }
   try {
-    const token = createTrackedToken({ workspaceId: body.workspaceId, campaignId: body.campaignId, contactId: body.contactId, step: step as 1 | 2 | 3, url: body.url });
+    await requireAdminMutation(request);
+    const token = createTrackedToken(schema.parse(await request.json()));
     return NextResponse.json({ url: new URL(`/r/${token}`, request.nextUrl.origin).toString() });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid link" }, { status: 400 });
+    return toErrorResponse(error);
   }
 }

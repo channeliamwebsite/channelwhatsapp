@@ -8,7 +8,7 @@ export type MessageStats = {
 };
 
 export type DashboardStat = {
-  id: "contacts" | "campaigns" | "sent" | "delivered" | "read" | "failed";
+  id: "contacts" | "campaigns" | "active" | "completed" | "sent" | "delivered" | "read" | "failed" | "replies";
   label: string;
   value: number;
   /** Percentage change vs. previous period (omitted when unknown). */
@@ -89,20 +89,15 @@ export type ActivityItem = {
   timeLabel: string;
 };
 
-/** Where dashboard figures come from. Only "mock" exists today. */
-export type DataSource = "mock" | "whatsapp-api";
-
 export type DashboardData = {
-  source: DataSource;
-  /** Convenience flag: true while `source` is "mock". */
-  isMockData: boolean;
-  user: { firstName: string };
   periodLabel: string;
   stats: DashboardStat[];
   performance: MessagePerformancePoint[];
   recentCampaigns: RecentCampaign[];
   scheduledCampaigns: ScheduledCampaign[];
   audience: AudienceOverview;
-  activity: ActivityItem[];
+  activity: import("./activity").ActivityEvent[];
+  /** New contacts per day in the selected range. */
+  contactGrowth: { date: string; label: string; contacts: number }[];
   whatsappAccount: WhatsAppAccountStatus;
 };

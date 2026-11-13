@@ -6,7 +6,6 @@ import { ArrowRight } from "lucide-react";
 import { CampaignStatusBadge } from "@/components/campaigns/campaign-status-badge";
 import { DashboardCard } from "@/components/dashboard/dashboard-card";
 import { PageHeader } from "@/components/dashboard/page-header";
-import { SampleDataBadge } from "@/components/dashboard/sample-data-badge";
 import { Card } from "@/components/ui/card";
 import { computeFunnelMetrics } from "@/lib/funnel/metrics";
 import { useHub } from "@/lib/store/hub-store";
@@ -21,10 +20,10 @@ export function FunnelsOverview() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader eyebrow={<SampleDataBadge />} title="Funnels" description={`Behaviour-based three-message journeys across ${workspace.name} campaigns.`} />
+      <PageHeader title="Funnels" description={`Behaviour-based three-message journeys across ${workspace.name} campaigns.`} />
       <FunnelKpis metrics={all} />
       <div className="grid gap-6 xl:grid-cols-3">
-        <DashboardCard className="xl:col-span-1" title="All funnels combined" sample>
+        <DashboardCard className="xl:col-span-1" title="All funnels combined">
           <FunnelProgression metrics={all} />
         </DashboardCard>
         <div className="flex flex-col gap-3 xl:col-span-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleSlash, Download, FolderPlus, Megaphone, Tag, Trash2, X } from "lucide-react";
+import { CircleSlash, Download, FolderMinus, FolderPlus, Megaphone, Tag, Trash2, X } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownTrigger } from "@/components/ui/dropdown";
@@ -15,6 +15,7 @@ type BulkActionsBarProps = {
   groups: string[];
   tags: string[];
   onAddToGroup: (group: string) => void;
+  onRemoveFromGroup: (group: string) => void;
   onAddTag: (tag: string) => void;
   onPrepareCampaign: () => void;
   onOptOut: () => void;
@@ -54,6 +55,18 @@ export function BulkActionsBar(props: BulkActionsBarProps) {
             <DropdownLabel>Audience groups</DropdownLabel>
             {props.groups.map((g) => (
               <DropdownItem key={g} onClick={() => props.onAddToGroup(g)}>{g}</DropdownItem>
+            ))}
+          </DropdownContent>
+        </Dropdown>
+        <Dropdown>
+          <DropdownTrigger className={trigger}>
+            <FolderMinus aria-hidden="true" />
+            Remove from group
+          </DropdownTrigger>
+          <DropdownContent align="start">
+            <DropdownLabel>Audience groups</DropdownLabel>
+            {props.groups.map((g) => (
+              <DropdownItem key={g} onClick={() => props.onRemoveFromGroup(g)}>{g}</DropdownItem>
             ))}
           </DropdownContent>
         </Dropdown>

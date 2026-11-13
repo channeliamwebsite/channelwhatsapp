@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
-import { ModulePlaceholder } from "@/components/dashboard/module-placeholder";
+import { WhatsAppAccountManager } from "@/components/whatsapp/whatsapp-account-manager";
 
 export const metadata: Metadata = { title: "WhatsApp Account" };
 
 export default function WhatsAppAccountPage() {
-  return <ModulePlaceholder href="/whatsapp-account" />;
+  return <WhatsAppAccountManager />;
 }

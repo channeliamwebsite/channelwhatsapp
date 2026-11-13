@@ -4,7 +4,6 @@ import * as React from "react";
 import { Pencil, Plus, Trash2, Users } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/page-header";
-import { SampleDataBadge } from "@/components/dashboard/sample-data-badge";
 import { OptInBadge } from "@/components/contacts/opt-in-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -16,6 +15,9 @@ import { useToast } from "@/components/ui/toast";
 import { getIneligibleReason, ineligibleReasonLabel } from "@/lib/contacts/eligibility";
 import { formatPhone } from "@/lib/contacts/phone";
 import { useHub } from "@/lib/store/hub-store";
+
+import { SegmentsPanel } from "./segments-panel";
+import { TagsPanel } from "./tags-panel";
 import { formatDate, formatNumber } from "@/lib/utils";
 import type { AudienceGroup } from "@/types/audience";
 
@@ -27,6 +29,7 @@ export function AudienceGroupsManager() {
   const [editing, setEditing] = React.useState<AudienceGroup | "new" | null>(null);
   const [viewing, setViewing] = React.useState<AudienceGroup | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmOptions | null>(null);
+  const [tab, setTab] = React.useState<"Groups" | "Tags" | "Segments">("Groups");
 
   const stats = React.useMemo(() => {
     const map = new Map<string, GroupStats>();
@@ -87,17 +90,21 @@ export function AudienceGroupsManager() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        eyebrow={<SampleDataBadge />}
-        title="Audience groups"
-        description={`Reusable segments for ${workspace.name}. Only campaign-eligible members receive funnel messages.`}
-        actions={
-          <Button size="lg" onClick={() => setEditing("new")}>
-            <Plus aria-hidden="true" />
-            Create group
-          </Button>
-        }
-      />
+      <PageHeader title="Audience" description={`Groups, tags and saved segments for ${workspace.name}. Only campaign-eligible contacts ever receive messages.`} />
+      <div role="tablist" aria-label="Audience sections" className="flex gap-1 border-b border-border">
+        {(["Groups", "Tags", "Segments"] as const).map((t) => (
+          <button key={t} role="tab" type="button" aria-selected={tab === t} onClick={() => setTab(t)} className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{t}</button>
+        ))}
+      </div>
+      {tab === "Tags" && <TagsPanel />}
+      {tab === "Segments" && <SegmentsPanel />}
+      {tab === "Groups" && (<>
+      <div className="flex justify-end">
+        <Button size="lg" onClick={() => setEditing("new")}>
+          <Plus aria-hidden="true" />
+          Create group
+        </Button>
+      </div>
 
       <Card className="gap-0 overflow-hidden py-0">
         {data.audienceGroups.length === 0 ? (
@@ -149,6 +156,8 @@ export function AudienceGroupsManager() {
           </div>
         )}
       </Card>
+
+      </>)}
 
       <GroupFormDialog
         group={editing}

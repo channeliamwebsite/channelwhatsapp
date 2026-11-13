@@ -11,8 +11,11 @@ export const CONSENT_SOURCES = [
 
 export type ConsentSource = (typeof CONSENT_SOURCES)[number];
 
+export type ConsentRecord = { status: OptInStatus; source: string; at: string };
+
 export type Contact = {
   id: string;
+  workspaceId?: string;
   fullName: string;
   /** Stored in E.164 format, e.g. +919876543210. */
   phone: string;
@@ -29,6 +32,14 @@ export type Contact = {
   consentDate: string;
   /** ISO 8601 timestamp. */
   createdAt: string;
+  /** E.164 country calling code, e.g. "91" — set by the server. */
+  countryCode?: string;
+  customFields?: Record<string, string>;
+  /** Server-maintained consent timestamps and full history (never rewritten). */
+  optedInAt?: string;
+  optedOutAt?: string;
+  consentHistory?: ConsentRecord[];
+  updatedAt?: string;
 };
 
-export type ContactInput = Omit<Contact, "id" | "createdAt">;
+export type ContactInput = Omit<Contact, "id" | "createdAt" | "workspaceId" | "countryCode" | "optedInAt" | "optedOutAt" | "consentHistory" | "updatedAt">;

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Megaphone, Plus } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/page-header";
-import { SampleDataBadge } from "@/components/dashboard/sample-data-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { computeFunnelMetrics } from "@/lib/funnel/metrics";
@@ -22,7 +21,6 @@ export function CampaignsList() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow={<SampleDataBadge />}
         title="Campaigns"
         description={`Three-message behaviour funnels for ${workspace.name}.`}
         actions={

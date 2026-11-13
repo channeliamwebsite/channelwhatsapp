@@ -4,10 +4,11 @@ import type { CampaignStatus } from "@/types/campaign";
 const config: Record<CampaignStatus, { label: string; variant: "neutral" | "info" | "warning" | "success" | "outline" | "danger" }> = {
   draft: { label: "Draft", variant: "neutral" },
   scheduled: { label: "Scheduled", variant: "info" },
-  running: { label: "Running", variant: "warning" },
+  running: { label: "Active", variant: "warning" },
   paused: { label: "Paused", variant: "outline" },
   completed: { label: "Completed", variant: "success" },
-  stopped: { label: "Stopped", variant: "danger" },
+  stopped: { label: "Cancelled", variant: "danger" },
+  failed: { label: "Failed", variant: "danger" },
 };
 
 export function CampaignStatusBadge({ status }: { status: CampaignStatus }) {

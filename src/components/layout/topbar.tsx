@@ -3,7 +3,7 @@
 import { Menu } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { mockCurrentUser, mockNotifications } from "@/lib/mock-data/workspace";
+import { useHub } from "@/lib/store/hub-store";
 
 import { GlobalSearch } from "./global-search";
 import { NotificationsMenu } from "./notifications-menu";
@@ -12,6 +12,7 @@ import { UserMenu } from "./user-menu";
 
 export function Topbar() {
   const { setMobileOpen } = useSidebar();
+  const { user } = useHub();
 
   return (
     <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card/85 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-card/75 sm:px-6">
@@ -30,9 +31,9 @@ export function Topbar() {
       </div>
 
       <div className="flex items-center gap-1 sm:gap-2">
-        <NotificationsMenu notifications={mockNotifications} />
+        <NotificationsMenu />
         <div className="mx-1 hidden h-6 w-px bg-border sm:block" aria-hidden="true" />
-        <UserMenu user={mockCurrentUser} />
+        <UserMenu user={{ name: "Super Admin", email: user.email, role: "Super Admin" }} />
       </div>
     </header>
   );

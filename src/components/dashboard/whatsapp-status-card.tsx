@@ -25,10 +25,8 @@ const qualityLabel: Record<WhatsAppAccountStatus["qualityRating"], { label: stri
 
 export function WhatsAppStatusCard({
   account,
-  isMockData,
 }: {
   account: WhatsAppAccountStatus;
-  isMockData: boolean;
 }) {
   const status = statusConfig[account.status];
   const StatusIcon = status.icon;
@@ -38,9 +36,15 @@ export function WhatsAppStatusCard({
     <DashboardCard
       title="WhatsApp account"
       description="Business API connection"
-      sample={isMockData}
       contentClassName="pt-4"
     >
+      {account.status === "disconnected" && !account.displayNumber ? (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-8 text-center">
+          <Smartphone className="size-6 text-muted-foreground" aria-hidden="true" />
+          <p className="text-sm font-medium">No WhatsApp account connected</p>
+          <Link href="/whatsapp-account" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-1")}>Connect account</Link>
+        </div>
+      ) : (<>
       <div className="flex items-center gap-3 rounded-lg bg-muted/60 p-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-card text-foreground shadow-xs">
           <Smartphone className="size-5" aria-hidden="true" />
@@ -76,6 +80,7 @@ export function WhatsAppStatusCard({
       >
         Manage account
       </Link>
+      </>)}
     </DashboardCard>
   );
 }
