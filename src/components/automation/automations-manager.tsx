@@ -20,7 +20,7 @@ import { formatDate } from "@/lib/utils";
 import type { Automation, AutomationAction, AutomationCondition, AutomationRun, AutomationTriggerType } from "@/types/automation";
 
 const MESSAGE_TRIGGERS: AutomationTriggerType[] = ["message_read", "link_clicked", "contact_replied", "message_failed"];
-const RUN_BADGE: Record<AutomationRun["status"], "neutral" | "success" | "danger" | "outline"> = { pending: "neutral", succeeded: "success", failed: "danger", skipped: "outline" };
+const RUN_BADGE: Record<AutomationRun["status"], "neutral" | "success" | "danger" | "outline"> = { pending: "neutral", processing: "neutral", succeeded: "success", failed: "danger", skipped: "outline" };
 
 function describeAction(a: AutomationAction, templates: Map<string, string>) {
   switch (a.type) {

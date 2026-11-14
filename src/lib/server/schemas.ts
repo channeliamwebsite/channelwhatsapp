@@ -133,6 +133,12 @@ export const whatsappConfigSchema = z.object({
   wabaId: z.union([z.literal(""), z.string().regex(/^\d{5,30}$/, "numeric ID from Meta")]),
 });
 
+export const testMessageSchema = z.object({
+  to: text(32).min(5),
+  templateName: z.string().regex(/^[a-z0-9_]{1,512}$/, "lowercase letters, numbers and underscores"),
+  languageCode: z.string().regex(/^[a-z]{2,3}(_[A-Z]{2})?$/, "e.g. en_US"),
+});
+
 export const replySchema = z.object({ text: z.string().trim().min(1).max(4096) });
 export const conversationPatchSchema = z.object({ status: z.enum(["open", "pending", "closed"]).optional(), markRead: z.boolean().optional() });
 

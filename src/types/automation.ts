@@ -40,7 +40,7 @@ export type AutomationRun = {
   automationId: string;
   contactId: string;
   trigger: AutomationTriggerType;
-  status: "pending" | "succeeded" | "failed" | "skipped";
+  status: "pending" | "processing" | "succeeded" | "failed" | "skipped";
   detail?: string;
   triggeredAt: string;
   dueAt: string;

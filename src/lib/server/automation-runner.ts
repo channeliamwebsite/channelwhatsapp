@@ -9,8 +9,10 @@ import type { DocumentData } from "firebase-admin/firestore";
 
 import { applyContactActions, conditionsHold, matchesTrigger, type TriggerEvent } from "@/lib/automation/engine";
 import { checkConsent } from "@/lib/funnel/engine";
+import { placeholderCount } from "@/lib/funnel/variables";
 import type { Automation, AutomationRun } from "@/types/automation";
 import type { Contact } from "@/types/contact";
+import type { WhatsAppTemplate } from "@/types/template";
 import type { Workspace } from "@/types/workspace";
 
 import { getSender } from "./sender";
@@ -40,6 +42,7 @@ export async function processDueRuns(workspace: Workspace, now: string, limit = 
   const due = await ws.collection("automationRuns").where("status", "==", "pending").where("dueAt", "<=", now).limit(limit).get();
   if (due.empty) return { executed: 0 };
   const automations = new Map((await listOwned<Automation>(workspace.id, "automations")).map((a) => [a.id, a]));
+  const templates = new Map((await listOwned<WhatsAppTemplate>(workspace.id, "templates")).map((t) => [t.id, t]));
   const sender = getSender(workspace);
   let executed = 0;
 
@@ -47,11 +50,15 @@ export async function processDueRuns(workspace: Workspace, now: string, limit = 
     const run = doc.data() as AutomationRun;
     const automation = automations.get(run.automationId);
     const contactRef = ws.collection("contacts").doc(run.contactId);
-    await db().runTransaction(async (tx) => {
+    // Phase 1 (transaction): re-check, apply contact actions, and either finish or claim the run for sending.
+    const toSend = await db().runTransaction(async (tx): Promise<{ contact: Contact; templateIds: string[]; changed: boolean } | null> => {
       const fresh = await tx.get(doc.ref);
-      if ((fresh.data() as AutomationRun).status !== "pending") return; // another worker took it
+      if ((fresh.data() as AutomationRun).status !== "pending") return null; // another worker took it
       const contact = (await tx.get(contactRef)).data() as Contact | undefined;
-      const finish = (status: AutomationRun["status"], detail: string) => tx.update(doc.ref, { status, detail, executedAt: now });
+      const finish = (status: AutomationRun["status"], detail: string) => {
+        tx.update(doc.ref, { status, detail, executedAt: now });
+        return null;
+      };
       if (!automation || !automation.enabled) return finish("skipped", "Automation disabled or deleted");
       if (!contact) return finish("skipped", "Contact no longer exists");
       if (!conditionsHold(automation, contact)) return finish("skipped", "Conditions not met");
@@ -61,9 +68,25 @@ export async function processDueRuns(workspace: Workspace, now: string, limit = 
       const sends = automation.actions.filter((a) => a.type === "send_template");
       if (sends.length && !sender) return finish(updated !== contact ? "succeeded" : "skipped", "Message not sent — WhatsApp sending is unavailable");
       if (sends.length && !checkConsent(updated).ok) return finish(updated !== contact ? "succeeded" : "skipped", "Message not sent — contact is not eligible");
-      // Real sends will be dispatched here once the WhatsApp sender exists.
-      return finish("succeeded", updated !== contact ? "Contact updated" : "Nothing to change");
+      if (!sends.length) return finish("succeeded", updated !== contact ? "Contact updated" : "Nothing to change");
+      tx.update(doc.ref, { status: "processing" });
+      return { contact: updated, templateIds: sends.map((a) => (a as { templateId: string }).templateId), changed: updated !== contact };
     });
+
+    // Phase 2 (outside the transaction, so a retried transaction can never send twice).
+    if (toSend && sender) {
+      const outcomes: string[] = [];
+      let failed = false;
+      for (const templateId of toSend.templateIds) {
+        const template = templates.get(templateId);
+        if (!template) { outcomes.push("template missing"); failed = true; continue; }
+        if (placeholderCount([template]) > 0) { outcomes.push(`${template.name}: needs variables (not supported in automations yet)`); failed = true; continue; }
+        const result = await sender.send({ to: toSend.contact.phone, template, variables: [], buttonUrls: [] });
+        if (result.ok) outcomes.push(`${template.name} sent`);
+        else { outcomes.push(`${template.name}: ${result.error}`); failed = true; }
+      }
+      await doc.ref.update({ status: failed ? "failed" : "succeeded", detail: outcomes.join("; "), executedAt: new Date().toISOString() });
+    }
     executed++;
   }
   return { executed };

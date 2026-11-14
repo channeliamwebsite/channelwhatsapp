@@ -52,9 +52,22 @@ export async function sendReply(workspaceId: string, conversationId: string, tex
   if (!conversation.lastInboundAt || Date.now() - new Date(conversation.lastInboundAt).getTime() > WINDOW_MS) {
     throw new ApiError(409, "The 24-hour reply window has closed. Send an approved template instead.");
   }
-  if (!getSender(workspace)) throw new ApiError(409, "Sending is unavailable — connect this workspace’s WhatsApp Business account first.");
-  void text; // dispatched through the sender in the WhatsApp API phase
-  throw new ApiError(501, "Replies will be enabled with the WhatsApp API integration.");
+  const sender = getSender(workspace);
+  if (!sender) throw new ApiError(409, "Sending is unavailable — verify this workspace’s WhatsApp connection first.");
+  const contact = (await wsRef(workspaceId).collection("contacts").doc(conversation.contactId).get()).data() as Contact | undefined;
+  if (!contact) throw new ApiError(404, "Contact not found.");
+  if (contact.optInStatus === "opted_out") throw new ApiError(409, "This contact has opted out.");
+
+  const result = await sender.sendText(contact.phone, text);
+  if (!result.ok) throw new ApiError(result.retryable ? 503 : 422, result.error);
+  const now = new Date().toISOString();
+  const ref = wsRef(workspaceId).collection("messages").doc(`out_${result.waMessageId}`.replace(/[^A-Za-z0-9_\-.]/g, "_"));
+  const message: ConversationMessage = { id: ref.id, workspaceId, conversationId, contactId: contact.id, direction: "outbound", type: "text", text, status: "sent", waMessageId: result.waMessageId, timestamp: now };
+  const batch = db().batch();
+  batch.set(ref, message as DocumentData);
+  batch.update(wsRef(workspaceId).collection("conversations").doc(conversationId), { lastMessageAt: now, lastMessagePreview: text.slice(0, 120), lastDirection: "outbound" });
+  await batch.commit();
+  return message;
 }
 
 export type InboundMessage = { waMessageId: string; from: string; type: MessageType; text?: string; media?: ConversationMessage["media"]; timestamp: string };
