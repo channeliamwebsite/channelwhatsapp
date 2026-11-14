@@ -16,6 +16,12 @@ export type WhatsAppAccount = {
   webhookStatus?: "not_configured" | "pending_verification" | "verified" | "error";
   templateSync?: { status: "never" | "ok" | "error"; message?: string; lastSyncedAt?: string };
   lastSyncedAt?: string;
+  /** Where the access token comes from. Tokens themselves are never stored in Firestore. */
+  credentialSource?: "shared" | "secret_manager";
+  /** Result of the last server-side verification against Meta. */
+  verification?: { status: "connected" | "missing_credentials" | "verification_failed"; message: string; at: string };
+  platformType?: string;
+  verifiedAt?: string;
 };
 
 export type WorkspaceSettings = {

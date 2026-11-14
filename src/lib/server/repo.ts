@@ -165,11 +165,67 @@ export async function updateWhatsAppConfig(workspaceId: string, input: { busines
       status: changedIds || prev.status !== "connected" ? (input.phoneNumberId && input.wabaId ? "pending" : "disconnected") : prev.status,
       webhookStatus: prev.webhookStatus ?? "not_configured",
       templateSync: prev.templateSync ?? { status: "never" },
+      verification: changedIds ? null : prev.verification ?? null,
     },
     updatedAt: now,
   });
   logActivity(batch, workspaceId, { type: "workspace_updated", message: "WhatsApp account details updated" }, now);
   await batch.commit();
+}
+
+/** Verify the workspace's WhatsApp setup with Meta; "connected" is set only on success. */
+export async function verifyWhatsAppConnection(workspaceId: string) {
+  const { checkWhatsAppConnection } = await import("./whatsapp/verify");
+  const { credentialProviderFor } = await import("./whatsapp/credentials");
+  const { createWhatsAppClient } = await import("./whatsapp/client");
+  const workspace = await requireWorkspace(workspaceId);
+  const result = await checkWhatsAppConnection(await credentialProviderFor(workspace).resolve(workspace), (accessToken, apiVersion) => createWhatsAppClient({ accessToken, apiVersion }));
+  const prev = workspace.whatsappAccount;
+  const now = new Date().toISOString();
+  const connected = result.status === "connected";
+  const phone = result.phone;
+  const batch = db().batch();
+  batch.update(wsRef(workspaceId), {
+    whatsappAccount: {
+      ...prev,
+      status: connected ? "connected" : prev.phoneNumberId && prev.wabaId ? "pending" : "disconnected",
+      verification: { status: result.status, message: result.message, at: now },
+      ...(connected && phone ? {
+        verifiedAt: now,
+        displayName: phone.verifiedName ?? prev.displayName,
+        phoneNumber: phone.displayPhoneNumber ? `+${phone.displayPhoneNumber.replace(/\D/g, "")}` : prev.phoneNumber,
+        qualityRating: phone.qualityRating === "RED" ? "low" : phone.qualityRating === "YELLOW" ? "medium" : "high",
+        messagingLimit: phone.messagingLimitTier ?? prev.messagingLimit,
+        platformType: phone.platformType ?? "",
+      } : {}),
+    },
+    updatedAt: now,
+  });
+  logActivity(batch, workspaceId, { type: "workspace_updated", message: connected ? "WhatsApp connection verified" : `WhatsApp verification: ${result.status.replace("_", " ")}` }, now);
+  await batch.commit();
+  return { status: result.status, message: result.message };
+}
+
+/** Send one approved template by name (e.g. Meta's "hello_world") to test the connection. */
+export async function sendTestTemplate(workspaceId: string, input: { to: string; templateName: string; languageCode: string }) {
+  const { credentialProviderFor } = await import("./whatsapp/credentials");
+  const { createWhatsAppClient } = await import("./whatsapp/client");
+  const { buildNamedTemplatePayload, PayloadError } = await import("./whatsapp/payloads");
+  const { WhatsAppApiError } = await import("./whatsapp/errors");
+  const workspace = await requireWorkspace(workspaceId);
+  if (workspace.whatsappAccount.status !== "connected") throw new ApiError(409, "Verify the WhatsApp connection before sending a test message.");
+  const creds = await credentialProviderFor(workspace).resolve(workspace);
+  if (!creds.ok) throw new ApiError(409, creds.message);
+  try {
+    const payload = buildNamedTemplatePayload(input.to, input.templateName, input.languageCode);
+    const client = createWhatsAppClient({ accessToken: creds.credentials.accessToken, apiVersion: creds.credentials.apiVersion });
+    const res = await client.sendMessage(creds.credentials.phoneNumberId, payload);
+    return { messageId: res.messageId, accepted: res.messageStatus ?? "accepted" };
+  } catch (error) {
+    if (error instanceof PayloadError) throw new ApiError(400, error.message);
+    if (error instanceof WhatsAppApiError) throw new ApiError(error.retryable ? 503 : 422, error.message);
+    throw error;
+  }
 }
 
 /** Applies client edits after enforcing the business rules server-side. Returns new contact ids. */
