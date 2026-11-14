@@ -14,7 +14,8 @@ export type WhatsAppAccount = {
   phoneNumberId?: string;
   wabaId?: string;
   webhookStatus?: "not_configured" | "pending_verification" | "verified" | "error";
-  templateSync?: { status: "never" | "ok" | "error"; message?: string; lastSyncedAt?: string };
+  /** Meta template sync: `lastSyncedAt` is the last SUCCESSFUL sync; `lastAttemptAt` the last try. */
+  templateSync?: { status: "never" | "ok" | "error"; message?: string; lastSyncedAt?: string; lastAttemptAt?: string };
   lastSyncedAt?: string;
   /** Where the access token comes from. Tokens themselves are never stored in Firestore. */
   credentialSource?: "shared" | "secret_manager";

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Copy, Info, Pencil, Plus, Send, Trash2, X } from "lucide-react";
+import { CircleAlert, Copy, Info, Pencil, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useToast } from "@/components/ui/toast";
+import { api } from "@/lib/client/api";
 import { placeholderCount, renderBody } from "@/lib/funnel/variables";
 import { useHub } from "@/lib/store/hub-store";
 import { formatDate } from "@/lib/utils";
@@ -23,13 +24,34 @@ export const TEMPLATE_STATUS: Record<TemplateStatus, { label: string; variant: "
   pending: { label: "Pending approval", variant: "warning" },
   approved: { label: "Approved", variant: "success" },
   rejected: { label: "Rejected", variant: "danger" },
+  paused: { label: "Paused by Meta", variant: "warning" },
+  disabled: { label: "Disabled", variant: "danger" },
 };
+
+const syncTime = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+const formatSyncTime = (iso: string) => `${syncTime.format(new Date(iso))} IST`;
 const LANGUAGES = ["en", "en_US", "en_GB", "hi", "ml", "ta", "ar"];
 
 const blank = (): WhatsAppTemplate => ({ id: `tpl_${crypto.randomUUID().slice(0, 10)}`, name: "", category: "MARKETING", language: "en", status: "draft", header: { type: "none" }, body: "", footer: "", buttons: [], examples: [] });
 
 export function TemplatesManager() {
-  const { workspace, data, update } = useHub();
+  const { workspace, data, update, reload } = useHub();
+  const [syncing, setSyncing] = React.useState(false);
+  const account = workspace.whatsappAccount;
+  const hasIds = Boolean(account.phoneNumberId && account.wabaId);
+  const sync = account.templateSync;
+  const syncFromMeta = async () => {
+    setSyncing(true);
+    try {
+      const r = await api<{ total: number; created: number; updated: number; missing: number }>(`/api/workspaces/${encodeURIComponent(workspace.id)}/whatsapp/templates/sync`, { method: "POST" });
+      toast(`Synced ${r.total} template${r.total === 1 ? "" : "s"} from Meta (${r.created} new, ${r.updated} updated${r.missing ? `, ${r.missing} no longer in Meta` : ""})`);
+    } catch (e) {
+      toast((e as Error).message);
+    } finally {
+      await reload();
+      setSyncing(false);
+    }
+  };
   const { toast, toastElement } = useToast();
   const [editing, setEditing] = React.useState<WhatsAppTemplate | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmOptions | null>(null);
@@ -41,32 +63,52 @@ export function TemplatesManager() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Templates" description={`WhatsApp message templates for ${workspace.name}.`} actions={<Button size="lg" onClick={() => setEditing(blank())}><Plus aria-hidden="true" /> New template</Button>} />
-      <p role="note" className="flex items-start gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
-        <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-        Meta approval verification is pending: templates are not submitted to Meta until the WhatsApp API integration is connected. Approved and Rejected statuses will only ever come from Meta.
-      </p>
+      <PageHeader title="Templates" description={`WhatsApp message templates for ${workspace.name}.`} actions={<>
+        <Button size="lg" variant="outline" disabled={syncing || !hasIds} title={hasIds ? "Fetch templates and their status from Meta" : "Save the Phone Number ID and WABA ID first"} onClick={syncFromMeta}><RefreshCw className={syncing ? "animate-spin" : undefined} aria-hidden="true" /> {syncing ? "Syncing…" : "Sync from Meta"}</Button>
+        <Button size="lg" onClick={() => setEditing(blank())}><Plus aria-hidden="true" /> New template</Button>
+      </>} />
+      <div role="status" className="flex items-start gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+        {sync?.status === "error" ? <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" /> : <Info className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
+        <div className="flex flex-col gap-0.5">
+          <p>
+            <span className="font-medium text-foreground">Last successful sync with Meta: </span>
+            {sync?.lastSyncedAt ? formatSyncTime(sync.lastSyncedAt) : "never"}
+            {sync?.status === "ok" && sync.message ? ` — ${sync.message}` : ""}
+          </p>
+          {sync?.status === "error" && <p className="text-destructive">Last sync failed{sync.lastAttemptAt ? ` (${formatSyncTime(sync.lastAttemptAt)})` : ""}: {sync.message} Templates were left unchanged.</p>}
+          <p className="text-xs">Statuses come only from Meta. Only Approved templates can be used in campaigns and automations, and status is checked with Meta again before every scheduled send.{!hasIds && " Save this workspace’s Phone Number ID and WABA ID on the WhatsApp page to enable sync."}</p>
+        </div>
+      </div>
       <Card className="gap-0 overflow-hidden py-0">
         {data.templates.length === 0 ? <p className="px-6 py-14 text-center text-sm text-muted-foreground">No templates created yet.</p> : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead><tr className="border-b border-border bg-muted/40 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
-                <th scope="col" className="px-5 py-2.5 font-semibold">Template</th><th scope="col" className="px-3 py-2.5 font-semibold">Category</th><th scope="col" className="px-3 py-2.5 font-semibold">Status</th><th scope="col" className="px-3 py-2.5 font-semibold">Updated</th><th scope="col" className="px-5 py-2.5"><span className="sr-only">Actions</span></th>
+                <th scope="col" className="px-5 py-2.5 font-semibold">Template</th><th scope="col" className="px-3 py-2.5 font-semibold">Category</th><th scope="col" className="px-3 py-2.5 font-semibold">Language</th><th scope="col" className="px-3 py-2.5 font-semibold">Status</th><th scope="col" className="px-3 py-2.5 font-semibold">Updated</th><th scope="col" className="px-5 py-2.5"><span className="sr-only">Actions</span></th>
               </tr></thead>
               <tbody>
                 {data.templates.map((t) => {
-                  const editable = t.status === "draft" || t.status === "rejected";
+                  const fromMeta = Boolean(t.metaTemplateId);
+                  const editable = !fromMeta && (t.status === "draft" || t.status === "rejected");
                   return (
                     <tr key={t.id} className="border-b border-border last:border-0">
-                      <td className="max-w-md px-5 py-3"><p className="font-mono text-[13px] font-medium">{t.name}</p><p className="line-clamp-1 text-xs text-muted-foreground">{t.body}</p></td>
-                      <td className="px-3 py-3 text-xs">{t.category} · {t.language}</td>
-                      <td className="px-3 py-3"><Badge variant={TEMPLATE_STATUS[t.status].variant}>{TEMPLATE_STATUS[t.status].label}</Badge>{t.status === "pending" && <p className="mt-1 text-[11px] text-muted-foreground">Meta verification pending</p>}{t.rejectedReason && <p className="mt-1 text-[11px] text-destructive">{t.rejectedReason}</p>}</td>
+                      <td className="max-w-md px-5 py-3"><p className="flex items-center gap-2 font-mono text-[13px] font-medium">{t.name}{fromMeta && <span className="rounded bg-muted px-1.5 py-px font-sans text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Meta</span>}</p><p className="line-clamp-1 text-xs text-muted-foreground">{t.body}</p></td>
+                      <td className="px-3 py-3 text-xs">{t.category}</td>
+                      <td className="px-3 py-3 font-mono text-xs">{t.language}</td>
+                      <td className="max-w-56 px-3 py-3">
+                        <Badge variant={TEMPLATE_STATUS[t.status].variant}>{TEMPLATE_STATUS[t.status].label}</Badge>
+                        {t.metaStatus && t.metaStatus !== t.status.toUpperCase() && <p className="mt-1 font-mono text-[10px] text-muted-foreground">Meta: {t.metaStatus}</p>}
+                        {t.status === "pending" && <p className="mt-1 text-[11px] text-muted-foreground">{fromMeta ? "In Meta review" : "Not yet in Meta — sync after submitting in WhatsApp Manager"}</p>}
+                        {t.rejectedReason && <p className="mt-1 text-[11px] text-destructive">Reason: {t.rejectedReason}</p>}
+                        {t.statusDetail && <p className="mt-1 text-[11px] text-destructive">{t.statusDetail}</p>}
+                        {t.unsupportedReason && <p className="mt-1 text-[11px] text-warning">{t.unsupportedReason}</p>}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{t.updatedAt ? formatDate(t.updatedAt) : "—"}</td>
                       <td className="px-5 py-3"><div className="flex justify-end gap-1">
                         {editable && <Button variant="ghost" size="icon-lg" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)}><Pencil aria-hidden="true" /></Button>}
-                        {t.status === "draft" && <Button variant="ghost" size="icon-lg" aria-label={`Submit ${t.name} for approval`} title="Mark ready for Meta approval" onClick={() => save({ ...t, status: "pending" }, `${t.name} marked pending approval`)}><Send aria-hidden="true" /></Button>}
-                        <Button variant="ghost" size="icon-lg" aria-label={`Duplicate ${t.name}`} onClick={() => setEditing({ ...t, id: blank().id, name: `${t.name}_v2`.slice(0, 512), status: "draft", metaTemplateId: undefined, rejectedReason: undefined })}><Copy aria-hidden="true" /></Button>
-                        <Button variant="ghost" size="icon-lg" aria-label={`Delete ${t.name}`} onClick={() => setConfirm({ title: `Delete ${t.name}?`, description: "The template record is removed from this workspace.", confirmLabel: "Delete", destructive: true, onConfirm: async () => { if (await update((d) => ({ ...d, templates: d.templates.filter((x) => x.id !== t.id) }))) toast("Template deleted"); } })}><Trash2 aria-hidden="true" /></Button>
+                        {t.status === "draft" && !fromMeta && <Button variant="ghost" size="icon-lg" aria-label={`Submit ${t.name} for approval`} title="Mark ready for Meta approval" onClick={() => save({ ...t, status: "pending" }, `${t.name} marked pending approval`)}><Send aria-hidden="true" /></Button>}
+                        <Button variant="ghost" size="icon-lg" aria-label={`Duplicate ${t.name}`} onClick={() => setEditing({ ...t, id: blank().id, name: `${t.name}_v2`.slice(0, 512), status: "draft", metaTemplateId: undefined, metaStatus: undefined, wabaId: undefined, rejectedReason: undefined, unsupportedReason: undefined, statusDetail: undefined })}><Copy aria-hidden="true" /></Button>
+                        <Button variant="ghost" size="icon-lg" aria-label={`Delete ${t.name}`} onClick={() => setConfirm({ title: `Delete ${t.name}?`, description: fromMeta ? "The record is removed from this dashboard only. It returns on the next sync while it still exists in Meta." : "The template record is removed from this workspace.", confirmLabel: "Delete", destructive: true, onConfirm: async () => { if (await update((d) => ({ ...d, templates: d.templates.filter((x) => x.id !== t.id) }))) toast("Template deleted"); } })}><Trash2 aria-hidden="true" /></Button>
                       </div></td>
                     </tr>
                   );

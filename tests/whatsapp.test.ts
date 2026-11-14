@@ -16,7 +16,7 @@ const workspace = (o: Partial<Workspace["whatsappAccount"]> = {}): Workspace => 
   id: "w1", name: "W", initials: "W", industry: "", color: "#000000", createdAt: "",
   whatsappAccount: { id: "", displayName: "", phoneNumber: "", status: "connected", qualityRating: "high", messagingLimit: "", phoneNumberId: "1234567890", wabaId: "9876543210", ...o },
 });
-const template = (o: Partial<WhatsAppTemplate> = {}): WhatsAppTemplate => ({ id: "t", name: "summit_invite", category: "MARKETING", language: "en_US", status: "approved", body: "Hi {{1}}, see you at {{2}}", buttons: [{ type: "url", text: "Open", url: "https://example.com" }], ...o });
+const template = (o: Partial<WhatsAppTemplate> = {}): WhatsAppTemplate => ({ id: "t", name: "summit_invite", category: "MARKETING", language: "en_US", status: "approved", wabaId: "9876543210", body: "Hi {{1}}, see you at {{2}}", buttons: [{ type: "url", text: "Open", url: "https://example.com" }], ...o });
 
 type Call = { url: string; method: string; headers: Record<string, string>; body?: string };
 /** Fake fetch returning queued responses and recording calls. */

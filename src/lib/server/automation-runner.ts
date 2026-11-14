@@ -18,7 +18,7 @@ import type { Workspace } from "@/types/workspace";
 import { getSender } from "./sender";
 import { recordWaMessage } from "./whatsapp/message-map";
 import { db } from "./firebase-admin";
-import { commitInChunks, listOwned, wsRef } from "./repo";
+import { commitInChunks, listOwned, syncTemplatesFromMeta, wsRef } from "./repo";
 
 const addMinutes = (iso: string, m: number) => new Date(new Date(iso).getTime() + m * 60_000).toISOString();
 
@@ -43,13 +43,21 @@ export async function processDueRuns(workspace: Workspace, now: string, limit = 
   const due = await ws.collection("automationRuns").where("status", "==", "pending").where("dueAt", "<=", now).limit(limit).get();
   if (due.empty) return { executed: 0 };
   const automations = new Map((await listOwned<Automation>(workspace.id, "automations")).map((a) => [a.id, a]));
-  const templates = new Map((await listOwned<WhatsAppTemplate>(workspace.id, "templates")).map((t) => [t.id, t]));
   const sender = getSender(workspace);
+  const sends = (a?: Automation) => Boolean(a?.enabled && a.actions.some((x) => x.type === "send_template"));
+  // Recheck Meta's template status before any automated send. If Meta can't
+  // confirm it, runs that send templates stay pending and are retried next time.
+  let templatesUnconfirmed = false;
+  if (sender && due.docs.some((d) => sends(automations.get((d.data() as AutomationRun).automationId)))) {
+    templatesUnconfirmed = !(await syncTemplatesFromMeta(workspace)).ok;
+  }
+  const templates = new Map((await listOwned<WhatsAppTemplate>(workspace.id, "templates")).map((t) => [t.id, t]));
   let executed = 0;
 
   for (const doc of due.docs) {
     const run = doc.data() as AutomationRun;
     const automation = automations.get(run.automationId);
+    if (templatesUnconfirmed && sends(automation)) continue;
     const contactRef = ws.collection("contacts").doc(run.contactId);
     // Phase 1 (transaction): re-check, apply contact actions, and either finish or claim the run for sending.
     const toSend = await db().runTransaction(async (tx): Promise<{ contact: Contact; templateIds: string[]; changed: boolean } | null> => {

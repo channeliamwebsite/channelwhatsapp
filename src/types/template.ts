@@ -1,9 +1,9 @@
 /**
  * Approval status comes from Meta. The dashboard can only create drafts and
- * mark them "pending" (submitted); "approved"/"rejected" are written solely by
- * the future template-sync job.
+ * mark them "pending"; "approved", "rejected", "paused" and "disabled" are
+ * written solely by the server-side Meta template sync. Only "approved" may be sent.
  */
-export type TemplateStatus = "draft" | "pending" | "approved" | "rejected";
+export type TemplateStatus = "draft" | "pending" | "approved" | "rejected" | "paused" | "disabled";
 export type TemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
 
 export type TemplateButton =
@@ -27,7 +27,15 @@ export type WhatsAppTemplate = {
   examples?: string[];
   /** Set by sync once Meta knows the template. */
   metaTemplateId?: string;
+  /** Meta's raw status (e.g. APPROVED, IN_APPEAL, LIMIT_EXCEEDED) from the last sync. */
+  metaStatus?: string;
+  /** WABA the template was synced from — a template can only be sent through that account. */
+  wabaId?: string;
   rejectedReason?: string;
+  /** Why the dashboard can't send this Meta template (unsupported components). */
+  unsupportedReason?: string;
+  /** Extra status information from sync, e.g. the template no longer exists in Meta. */
+  statusDetail?: string;
   createdAt?: string;
   updatedAt?: string;
 };

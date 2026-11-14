@@ -32,6 +32,7 @@ type Component = { type: "body" | "header"; parameters: { type: "text"; text: st
  */
 export function buildTemplatePayload(to: string, template: WhatsAppTemplate, variables: string[]) {
   if (template.status !== "approved") throw new PayloadError(`Template “${template.name}” is not approved by Meta.`);
+  if (template.unsupportedReason) throw new PayloadError(`Template “${template.name}”: ${template.unsupportedReason}`);
   if (!/^[a-z0-9_]{1,512}$/.test(template.name)) throw new PayloadError("Invalid template name.");
   if (!/^[a-z]{2,3}(_[A-Z]{2})?$/.test(template.language)) throw new PayloadError("Invalid template language code.");
   if (template.header && template.header.type !== "none" && template.header.type !== "text") {
