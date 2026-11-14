@@ -41,3 +41,10 @@ const dateFormatter = new Intl.DateTimeFormat("en-IN", {
 export function formatDate(iso: string) {
   return dateFormatter.format(new Date(iso));
 }
+
+const dateTimeFormatter = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+
+/** Formats an ISO timestamp as e.g. "14 Nov 2026, 12:30 pm IST". */
+export function formatDateTime(iso: string) {
+  return `${dateTimeFormatter.format(new Date(iso))} IST`;
+}

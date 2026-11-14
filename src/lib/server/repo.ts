@@ -160,6 +160,11 @@ export async function updateWhatsAppConfig(workspaceId: string, input: { busines
     const clash = await db().collection("workspaces").where("whatsappAccount.phoneNumberId", "==", input.phoneNumberId).limit(2).get();
     if (clash.docs.some((d) => d.id !== workspaceId)) throw new ApiError(409, "This Phone Number ID is already used by another workspace.");
   }
+  // One WhatsApp Business Account per workspace: templates and billing belong to the WABA.
+  if (input.wabaId) {
+    const clash = await db().collection("workspaces").where("whatsappAccount.wabaId", "==", input.wabaId).limit(2).get();
+    if (clash.docs.some((d) => d.id !== workspaceId)) throw new ApiError(409, "This WhatsApp Business Account ID is already used by another workspace.");
+  }
   const now = new Date().toISOString();
   const batch = db().batch();
   batch.update(wsRef(workspaceId), {
@@ -169,7 +174,9 @@ export async function updateWhatsAppConfig(workspaceId: string, input: { busines
       id: input.wabaId ? `waba_${input.wabaId}` : "",
       // Saved IDs are unverified until the API integration checks them with Meta.
       status: changedIds || prev.status !== "connected" ? (input.phoneNumberId && input.wabaId ? "pending" : "disconnected") : prev.status,
-      webhookStatus: prev.webhookStatus ?? "not_configured",
+      webhookStatus: changedIds ? "not_configured" : prev.webhookStatus ?? "not_configured",
+      webhookDetail: changedIds ? null : prev.webhookDetail ?? null,
+      webhookLastEventAt: changedIds ? null : prev.webhookLastEventAt ?? null,
       // Templates synced from a previous WABA can no longer be sent (wabaId mismatch) until the next sync.
       templateSync: changedIds ? { status: "never" } : prev.templateSync ?? { status: "never" },
       verification: changedIds ? null : prev.verification ?? null,
@@ -186,7 +193,8 @@ export async function verifyWhatsAppConnection(workspaceId: string) {
   const { credentialProviderFor } = await import("./whatsapp/credentials");
   const { createWhatsAppClient } = await import("./whatsapp/client");
   const workspace = await requireWorkspace(workspaceId);
-  const result = await checkWhatsAppConnection(await credentialProviderFor(workspace).resolve(workspace), (accessToken, apiVersion) => createWhatsAppClient({ accessToken, apiVersion }));
+  const { metaAppId } = await import("./whatsapp/config-status");
+  const result = await checkWhatsAppConnection(await credentialProviderFor(workspace).resolve(workspace), (accessToken, apiVersion) => createWhatsAppClient({ accessToken, apiVersion }), { appId: metaAppId() });
   const prev = workspace.whatsappAccount;
   const now = new Date().toISOString();
   const connected = result.status === "connected";
@@ -196,7 +204,12 @@ export async function verifyWhatsAppConnection(workspaceId: string) {
     whatsappAccount: {
       ...prev,
       status: connected ? "connected" : prev.phoneNumberId && prev.wabaId ? "pending" : "disconnected",
-      verification: { status: result.status, message: result.message, at: now },
+      verification: { status: result.status, message: result.message, at: now, checks: result.checks },
+      ...(result.webhook && result.webhook.subscribed !== null ? {
+        // "verified" means signed events actually arrived; a subscription alone is "pending_verification".
+        webhookStatus: result.webhook.subscribed ? (prev.webhookStatus === "verified" ? "verified" : "pending_verification") : "not_configured",
+        webhookDetail: result.webhook.detail,
+      } : {}),
       ...(connected && phone ? {
         verifiedAt: now,
         displayName: phone.verifiedName ?? prev.displayName,
@@ -210,7 +223,61 @@ export async function verifyWhatsAppConnection(workspaceId: string) {
   });
   logActivity(batch, workspaceId, { type: "workspace_updated", message: connected ? "WhatsApp connection verified" : `WhatsApp verification: ${result.status.replace("_", " ")}` }, now);
   await batch.commit();
-  return { status: result.status, message: result.message };
+  return { status: result.status, message: result.message, checks: result.checks };
+}
+
+/**
+ * Subscribe the Meta app (the one the server token belongs to) to this
+ * workspace's WABA webhooks: POST /{waba-id}/subscribed_apps. Connected workspaces only.
+ */
+export async function subscribeWorkspaceWebhook(workspaceId: string) {
+  const { credentialProviderFor } = await import("./whatsapp/credentials");
+  const { createWhatsAppClient } = await import("./whatsapp/client");
+  const { explainVerificationError } = await import("./whatsapp/verify");
+  const { metaAppId } = await import("./whatsapp/config-status");
+  const workspace = await requireWorkspace(workspaceId);
+  if (workspace.whatsappAccount.status !== "connected") throw new ApiError(409, "Verify the WhatsApp connection first.");
+  const creds = await credentialProviderFor(workspace).resolve(workspace);
+  if (!creds.ok) throw new ApiError(409, creds.message);
+  const client = createWhatsAppClient({ accessToken: creds.credentials.accessToken, apiVersion: creds.credentials.apiVersion });
+  let apps: { id?: string; name?: string }[];
+  try {
+    if (!(await client.subscribeApp(creds.credentials.wabaId))) throw new ApiError(502, "Meta did not confirm the subscription.");
+    apps = await client.getSubscribedApps(creds.credentials.wabaId);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(502, explainVerificationError(error, "webhook"));
+  }
+  const appId = metaAppId();
+  const subscribed = appId ? apps.some((a) => a.id === appId) : apps.length > 0;
+  const names = apps.map((a) => a.name ?? a.id ?? "unknown app");
+  const detail = subscribed ? `Subscribed: ${names.join(", ")}` : "Meta accepted the request but the app is not listed as subscribed yet.";
+  const now = new Date().toISOString();
+  const prev = workspace.whatsappAccount;
+  const batch = db().batch();
+  batch.update(wsRef(workspaceId), {
+    "whatsappAccount.webhookStatus": subscribed ? (prev.webhookStatus === "verified" ? "verified" : "pending_verification") : "not_configured",
+    "whatsappAccount.webhookDetail": detail,
+    updatedAt: now,
+  });
+  logActivity(batch, workspaceId, { type: "workspace_updated", message: "WhatsApp webhook subscription requested" }, now);
+  await batch.commit();
+  return { subscribed, detail };
+}
+
+/**
+ * Super Admin import of the WABA ID and Phone Number ID configured on the
+ * server (WHATSAPP_BUSINESS_ACCOUNT_ID / WHATSAPP_PHONE_NUMBER_ID) into ONE
+ * explicitly chosen workspace. Uniqueness rules of updateWhatsAppConfig apply,
+ * so the same IDs can never be imported into a second workspace.
+ */
+export async function importServerWhatsAppIds(workspaceId: string) {
+  const { serverWhatsAppIds } = await import("./whatsapp/config-status");
+  const ids = serverWhatsAppIds();
+  if (!ids) throw new ApiError(409, "WHATSAPP_BUSINESS_ACCOUNT_ID and WHATSAPP_PHONE_NUMBER_ID are not both configured on the server with valid numeric IDs.");
+  const prev = (await requireWorkspace(workspaceId)).whatsappAccount;
+  await updateWhatsAppConfig(workspaceId, { businessName: prev.businessName ?? "", displayName: prev.displayName ?? "", phoneNumber: prev.phoneNumber ?? "", phoneNumberId: ids.phoneNumberId, wabaId: ids.wabaId });
+  return ids;
 }
 
 export type TemplateSyncResult =

@@ -148,22 +148,57 @@ test("connection verification", async () => {
   const creds = (await sharedTokenProvider({ WHATSAPP_ACCESS_TOKEN: TOKEN }).resolve(workspace())) as CredentialResult;
   const make = (responses: { status: number; body: unknown }[]) => () => createWhatsAppClient({ accessToken: TOKEN, apiVersion: "v23.0", fetch: fakeFetch(responses).fn });
   const phone = { id: "1234567890", display_phone_number: "+91 98470 12345", verified_name: "Channeliam", platform_type: "CLOUD_API", quality_rating: "GREEN" };
+  const perms = { status: 200, body: { data: [{ permission: "whatsapp_business_messaging", status: "granted" }, { permission: "whatsapp_business_management", status: "granted" }, { permission: "public_profile", status: "granted" }] } };
+  const numbers = { status: 200, body: { data: [{ id: "1234567890" }] } };
+  const subscribed = { status: 200, body: { data: [{ whatsapp_business_api_data: { id: "1425000000000000", name: "Channel API" } }] } };
 
-  const ok = await checkWhatsAppConnection(creds, make([{ status: 200, body: phone }, { status: 200, body: { data: [{ id: "1234567890" }] } }]));
+  const ok = await checkWhatsAppConnection(creds, make([perms, { status: 200, body: phone }, numbers, subscribed]), { appId: "1425000000000000" });
   assert.equal(ok.status, "connected");
   assert.equal(ok.phone?.verifiedName, "Channeliam");
+  assert.deepEqual(ok.checks.map((c) => [c.key, c.ok]), [["permissions", true], ["phone_number", true], ["waba", true], ["webhook", true]]);
+  assert.equal(ok.status === "connected" && ok.webhook.subscribed, true);
+
+  // Another app subscribed, ours not: still connected, webhook reported as not subscribed.
+  const otherApp = await checkWhatsAppConnection(creds, make([perms, { status: 200, body: phone }, numbers, subscribed]), { appId: "999999999999" });
+  assert.equal(otherApp.status, "connected");
+  assert.equal(otherApp.status === "connected" && otherApp.webhook.subscribed, false);
+  const noSubs = await checkWhatsAppConnection(creds, make([perms, { status: 200, body: phone }, numbers, { status: 200, body: { data: [] } }]));
+  assert.equal(noSubs.status === "connected" && noSubs.webhook.subscribed, false);
+
+  // Permission list unavailable: not fatal, access is proven by the next calls.
+  const noPermList = await checkWhatsAppConnection(creds, make([{ status: 400, body: { error: { code: 100 } } }, { status: 200, body: phone }, numbers, subscribed]));
+  assert.equal(noPermList.status, "connected");
+  assert.equal(noPermList.checks[0].ok, null);
 
   const missing = await checkWhatsAppConnection((await sharedTokenProvider({}).resolve(workspace())) as CredentialResult, make([]));
   assert.equal(missing.status, "missing_credentials");
 
+  const missingPerm = await checkWhatsAppConnection(creds, make([{ status: 200, body: { data: [{ permission: "whatsapp_business_messaging", status: "granted" }, { permission: "whatsapp_business_management", status: "declined" }] } }]));
+  assert.equal(missingPerm.status, "verification_failed");
+  assert.match(missingPerm.message, /missing whatsapp_business_management/);
+
   const badToken = await checkWhatsAppConnection(creds, make([{ status: 401, body: { error: { code: 190 } } }]));
   assert.equal(badToken.status, "verification_failed");
-  assert.match(badToken.message, /WHATSAPP_ACCESS_TOKEN/);
+  assert.match(badToken.message, /invalid.*WHATSAPP_ACCESS_TOKEN/);
+  const expired = await checkWhatsAppConnection(creds, make([{ status: 401, body: { error: { code: 190, error_subcode: 463 } } }]));
+  assert.match(expired.message, /expired/);
+  assert.ok(!expired.message.includes(TOKEN));
 
-  const onPrem = await checkWhatsAppConnection(creds, make([{ status: 200, body: { ...phone, platform_type: "ON_PREMISE" } }]));
+  const badPhone = await checkWhatsAppConnection(creds, make([perms, { status: 400, body: { error: { code: 100, error_subcode: 33 } } }]));
+  assert.equal(badPhone.status, "verification_failed");
+  assert.match(badPhone.message, /Phone Number ID not found, or the System User has no access/);
+
+  const denied = await checkWhatsAppConnection(creds, make([perms, { status: 403, body: { error: { code: 200 } } }]));
+  assert.match(denied.message, /assign this WhatsApp Business Account to the System User/);
+
+  const badWaba = await checkWhatsAppConnection(creds, make([perms, { status: 200, body: phone }, { status: 400, body: { error: { code: 100, error_subcode: 33 } } }]));
+  assert.equal(badWaba.status, "verification_failed");
+  assert.match(badWaba.message, /WhatsApp Business Account ID not found/);
+
+  const onPrem = await checkWhatsAppConnection(creds, make([perms, { status: 200, body: { ...phone, platform_type: "ON_PREMISE" } }]));
   assert.equal(onPrem.status, "verification_failed");
 
-  const wrongWaba = await checkWhatsAppConnection(creds, make([{ status: 200, body: phone }, { status: 200, body: { data: [{ id: "555555555" }] } }]));
+  const wrongWaba = await checkWhatsAppConnection(creds, make([perms, { status: 200, body: phone }, { status: 200, body: { data: [{ id: "555555555" }] } }]));
   assert.equal(wrongWaba.status, "verification_failed");
   assert.match(wrongWaba.message, /does not belong/);
 });

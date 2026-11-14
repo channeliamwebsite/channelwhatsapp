@@ -21,6 +21,8 @@ export interface WebhookStore {
   applyConversationStatus(workspaceId: string, waMessageId: string, status: StatusEvent["status"], at: string, error: string | undefined, messageDocId: string): Promise<void>;
   /** Idempotent by event id. */
   ingestFunnelEvent(event: FunnelEventInput): Promise<void>;
+  /** Records that a signed event for this workspace arrived (webhook proven end to end). Optional. */
+  markWebhookReceived?(workspaceId: string, at: string): Promise<void>;
   /** Campaigns where this contact is still in the funnel. */
   activeCampaignIds(workspaceId: string, contactId: string): Promise<string[]>;
 }
@@ -42,6 +44,7 @@ export async function processWebhookBatches(batches: WebhookBatch[], store: Webh
       summary.unknownNumbers += batch.inbound.length + batch.statuses.length;
       continue;
     }
+    await store.markWebhookReceived?.(workspaceId, new Date().toISOString());
 
     for (const e of batch.inbound) {
       const { contactId } = await store.ingestInbound(workspaceId, e);

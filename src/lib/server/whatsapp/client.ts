@@ -58,9 +58,9 @@ export function createWhatsAppClient(options: ClientOptions) {
     } catch {
       throw new WhatsAppApiError({ category: "invalid_response", retryable: res.status >= 500, status: res.status, message: `Meta returned a non-JSON response (HTTP ${res.status}).` });
     }
-    const err = (json as { error?: { code?: number; message?: string; fbtrace_id?: string } }).error;
+    const err = (json as { error?: { code?: number; error_subcode?: number; message?: string; fbtrace_id?: string } }).error;
     if (!res.ok || err) {
-      const classified = classifyMetaError({ status: res.status, code: err?.code });
+      const classified = classifyMetaError({ status: res.status, code: err?.code, subcode: err?.error_subcode });
       throw new WhatsAppApiError({ ...classified, status: res.status, code: err?.code, fbtraceId: err?.fbtrace_id });
     }
     return json as T;
@@ -102,6 +102,28 @@ export function createWhatsAppClient(options: ClientOptions) {
       const j = await request<{ data?: { id?: unknown }[] }>("GET", `${wabaId}/phone_numbers?fields=id&limit=100`);
       if (!Array.isArray(j.data)) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned no phone number list." });
       return j.data.map((d) => d.id).filter((x): x is string => typeof x === "string");
+    },
+
+    /** GET /me/permissions — permissions granted to the token (System User tokens are user tokens). */
+    async getTokenPermissions(): Promise<string[]> {
+      const j = await request<{ data?: { permission?: unknown; status?: unknown }[] }>("GET", "me/permissions");
+      if (!Array.isArray(j.data)) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned no permission list." });
+      return j.data.filter((p) => p.status === "granted" && typeof p.permission === "string").map((p) => p.permission as string);
+    },
+
+    /** GET /{waba-id}/subscribed_apps — apps that receive this WABA's webhooks. */
+    async getSubscribedApps(wabaId: string): Promise<{ id?: string; name?: string }[]> {
+      if (!isMetaId(wabaId)) throw new WhatsAppApiError({ category: "invalid_request", retryable: false, message: "Invalid WhatsApp Business Account ID." });
+      const j = await request<{ data?: { whatsapp_business_api_data?: { id?: unknown; name?: unknown } }[] }>("GET", `${wabaId}/subscribed_apps`);
+      if (!Array.isArray(j.data)) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned no subscribed app list." });
+      return j.data.map((d) => ({ id: typeof d.whatsapp_business_api_data?.id === "string" ? d.whatsapp_business_api_data.id : undefined, name: typeof d.whatsapp_business_api_data?.name === "string" ? d.whatsapp_business_api_data.name : undefined }));
+    },
+
+    /** POST /{waba-id}/subscribed_apps — subscribes the token's app to this WABA's webhooks. */
+    async subscribeApp(wabaId: string): Promise<boolean> {
+      if (!isMetaId(wabaId)) throw new WhatsAppApiError({ category: "invalid_request", retryable: false, message: "Invalid WhatsApp Business Account ID." });
+      const j = await request<{ success?: unknown }>("POST", `${wabaId}/subscribed_apps`, {});
+      return j.success === true;
     },
 
     /**

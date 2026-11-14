@@ -20,7 +20,11 @@ export type WhatsAppAccount = {
   /** Where the access token comes from. Tokens themselves are never stored in Firestore. */
   credentialSource?: "shared" | "secret_manager";
   /** Result of the last server-side verification against Meta. */
-  verification?: { status: "connected" | "missing_credentials" | "verification_failed"; message: string; at: string };
+  verification?: { status: "connected" | "missing_credentials" | "verification_failed"; message: string; at: string; checks?: { key: string; label: string; ok: boolean | null; detail: string }[] };
+  /** Webhook subscription details from the last verification / subscribe action. */
+  webhookDetail?: string | null;
+  /** Last time a signed webhook event for this workspace's number arrived. */
+  webhookLastEventAt?: string | null;
   platformType?: string;
   verifiedAt?: string;
 };
