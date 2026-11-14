@@ -77,6 +77,10 @@ export function LoginForm() {
         </Button>
         <button type="button" onClick={reset} className="text-sm text-muted-foreground hover:text-foreground">Forgot password?</button>
       </form>
+      <p className="flex justify-center gap-4 text-xs text-muted-foreground">
+        <a href="/privacy-policy" className="hover:text-foreground">Privacy Policy</a>
+        <a href="/terms-of-service" className="hover:text-foreground">Terms of Service</a>
+      </p>
     </Card>
   );
 }
