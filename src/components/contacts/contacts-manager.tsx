@@ -160,7 +160,7 @@ export function ContactsManager({ initialViewId = null }: { initialViewId?: stri
   function confirmDelete(ids: Set<string>, label: string) {
     setConfirm({
       title: `Delete ${label}?`,
-      description: "This permanently removes the contact record. This can’t be undone.",
+      description: "This permanently deletes the contact and all linked data — conversation messages, campaign history, link clicks, automation history and activity entries. This can’t be undone.",
       confirmLabel: "Delete",
       destructive: true,
       onConfirm: () => {

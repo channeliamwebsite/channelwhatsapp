@@ -10,13 +10,16 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+const link = "text-primary underline-offset-4 hover:underline";
+
 const sections: LegalSection[] = [
   {
     id: "agreement",
     title: "Agreement",
     body: (
       <p>
-        These Terms govern the use of {COMPANY.productName} (the “Service”), operated by <Detail value={COMPANY.legalName} label="legal company name" /> (“{COMPANY.brandName}”, “we”). They apply to {COMPANY.brandName} and to each organisation for which we operate a workspace (a “Client”). By using the Service, or by asking us to send WhatsApp messages on your behalf, you agree to these Terms.
+        These Terms of Service (“Terms”) govern the use of {COMPANY.productName} (the “Service”), operated by <strong><Detail value={COMPANY.legalName} label="legal company name" /></strong>,{" "}
+        <Detail value={COMPANY.registeredAddress} label="registered address" /> (“{COMPANY.brandName}”, “we”). They apply to anyone who uses the Service and to each organisation for which we operate a workspace (a “Client”). By using the Service, or by asking us to send WhatsApp messages on your behalf, you agree to these Terms.
       </p>
     ),
   },
@@ -35,10 +38,11 @@ const sections: LegalSection[] = [
     ),
   },
   {
-    id: "accounts",
-    title: "Accounts and access",
+    id: "eligibility",
+    title: "Eligibility and accounts",
     body: (
       <ul>
+        <li>You must be at least <Detail value={COMPANY.minimumAge} label="minimum age" /> old to use the Service.</li>
         <li>Access is limited to a single authorised administrator account. There is no public registration.</li>
         <li>The administrator must keep sign-in credentials confidential and tell us promptly about any suspected unauthorised access.</li>
         <li>We may revoke sessions or suspend access to protect the Service or its data.</li>
@@ -46,46 +50,61 @@ const sections: LegalSection[] = [
     ),
   },
   {
-    id: "client-responsibilities",
-    title: "Client responsibilities and consent",
+    id: "user-responsibilities",
+    title: "User responsibilities",
+    body: (
+      <ul>
+        <li>Use the Service only for lawful purposes and in line with these Terms.</li>
+        <li>Make sure contact information entered or imported is accurate, up to date and lawfully collected.</li>
+        <li>Review campaigns, templates and automations before sending; you are responsible for the messages you send.</li>
+        <li>Keep consent records and honour opt-out requests.</li>
+      </ul>
+    ),
+  },
+  {
+    id: "whatsapp-consent",
+    title: "WhatsApp messaging and consent",
     body: (
       <>
-        <p>Each Client (and {COMPANY.brandName} for its own brands) is responsible for the contacts it provides and the messages sent to them, and must:</p>
+        <p>
+          {COMPANY.brandName}, as operator of the Service, or the Client on whose behalf messages are sent, is responsible for ensuring that appropriate WhatsApp user consent has been obtained before messages are sent.
+        </p>
         <ul>
-          <li>Have a lawful basis to collect each contact’s data and obtain clear, recorded <strong>opt-in consent</strong> before any WhatsApp marketing message is sent.</li>
-          <li>Keep accurate records of when and how consent was obtained, and provide them to us on request.</li>
-          <li>Ensure contact lists and imported files are accurate, up to date and collected in line with applicable law.</li>
-          <li>Honour opt-out requests immediately. The Service blocks messages to contacts marked as opted out; Clients must not re-add or re-subscribe them without fresh consent.</li>
+          <li>Marketing messages may be sent only to contacts who have opted in; the Service blocks messages to contacts marked as opted out.</li>
+          <li>Opt-out requests (for example a reply of STOP or UNSUBSCRIBE) must be honoured, and opted-out contacts must not be re-subscribed without fresh consent.</li>
+          <li>Use must comply with Meta’s WhatsApp Business Terms, WhatsApp Business Messaging Policy and Commerce Policy, as updated by Meta.</li>
+          <li>Messages outside WhatsApp’s 24-hour customer service window must use message templates approved by Meta.</li>
+          <li>Meta may limit, pause or block messaging, templates or phone numbers; we are not responsible for Meta’s decisions.</li>
         </ul>
       </>
     ),
   },
   {
-    id: "whatsapp-compliance",
-    title: "WhatsApp messaging compliance",
+    id: "client-responsibilities",
+    title: "Client responsibilities",
     body: (
       <ul>
-        <li>Use of the Service must comply with Meta’s WhatsApp Business Terms, WhatsApp Business Messaging Policy and Commerce Policy, as updated by Meta.</li>
-        <li>Messages outside WhatsApp’s 24-hour customer service window must use message templates approved by Meta.</li>
-        <li>Message content must be accurate, identify the sender, and not be misleading.</li>
-        <li>Meta may limit, pause or block messaging, templates or phone numbers; we are not responsible for Meta’s decisions.</li>
+        <li>Provide only contact information the Client is permitted to use for WhatsApp messaging.</li>
+        <li>Ensure appropriate consent has been obtained for its contacts before messages are sent on its behalf, as described above.</li>
+        <li>Ensure message content requested for its campaigns is accurate, lawful and identifies the sender.</li>
+        <li>Tell us promptly about opt-out, correction or deletion requests it receives from its contacts.</li>
       </ul>
     ),
   },
   {
-    id: "acceptable-use",
-    title: "Acceptable use and anti-spam",
+    id: "prohibited",
+    title: "Prohibited activities",
     body: (
       <>
         <p>You must not use the Service to:</p>
         <ul>
           <li>Send unsolicited messages, or message purchased, rented, scraped or otherwise non-consented contact lists.</li>
-          <li>Send content that is unlawful, fraudulent, deceptive, harassing, hateful, sexually explicit, or that infringes others’ rights.</li>
+          <li>Send content that is unlawful, fraudulent, deceptive, harassing, hateful or sexually explicit, or that infringes others’ rights.</li>
           <li>Promote products or services prohibited by Meta’s policies or applicable law.</li>
+          <li>Message anyone under <Detail value={COMPANY.minimumAge} label="minimum age" /> of age.</li>
           <li>Impersonate any person or organisation, or misrepresent the source of a message.</li>
           <li>Interfere with, probe or overload the Service, or attempt to access another workspace’s data.</li>
         </ul>
-        <p>We may refuse to send, remove content, or suspend a workspace that breaches these rules.</p>
       </>
     ),
   },
@@ -94,8 +113,7 @@ const sections: LegalSection[] = [
     title: "Data and privacy",
     body: (
       <p>
-        Personal data is handled as described in our <Link href="/privacy-policy" className="text-primary underline-offset-4 hover:underline">Privacy Policy</Link>. For Client workspaces, {COMPANY.brandName} processes contact data on the Client’s instructions.{" "}
-        <Detail value={COMPANY.processorAgreement} label="data-processing agreement terms with Clients" />
+        Personal information is handled as described in our <Link href="/privacy-policy" className={link}>Privacy Policy</Link>, including data retention, export and deletion.
       </p>
     ),
   },
@@ -118,24 +136,15 @@ const sections: LegalSection[] = [
     ),
   },
   {
-    id: "ip",
-    title: "Intellectual property",
-    body: (
-      <p>
-        The Service, its software and design belong to {COMPANY.brandName} or its licensors. Clients keep ownership of their contact data and message content and grant us the rights needed to operate the Service for them.
-      </p>
-    ),
-  },
-  {
     id: "termination",
-    title: "Suspension and termination",
+    title: "Suspension and workspace termination",
     body: (
       <>
         <p>
-          We may suspend or terminate a workspace immediately if these Terms, Meta’s policies or applicable law are breached, or to protect contacts or the Service. A Client may ask us to stop operating its workspace at any time.
+          We may suspend or terminate a workspace if these Terms, Meta’s policies or applicable law are breached, or to protect contacts or the Service.
         </p>
         <p>
-          When a workspace is deleted, all of its data is permanently removed from the Service. Arrangements for exporting data before deletion: <Detail value={COMPANY.terminationDataExport} label="data export / handover terms on termination" />
+          When a workspace is terminated, its data is retained for <Detail value={COMPANY.workspaceTerminationRetention} label="post-termination retention" /> following termination, subject to applicable legal requirements, and is then deleted. Contact lists and reports can be exported before deletion, as described in the <Link href="/privacy-policy#export" className={link}>Privacy Policy</Link>.
         </p>
       </>
     ),
@@ -145,7 +154,7 @@ const sections: LegalSection[] = [
     title: "Disclaimers",
     body: (
       <p>
-        The Service is provided “as is” and “as available”. To the extent permitted by law, we disclaim all implied warranties. We do not guarantee message delivery, read rates or campaign results, which depend on recipients and on Meta.
+        The Service is provided “as is” and “as available”. We do not guarantee message delivery, read rates or campaign results, which depend on recipients and on Meta.
       </p>
     ),
   },
@@ -154,25 +163,16 @@ const sections: LegalSection[] = [
     title: "Limitation of liability",
     body: (
       <p>
-        To the extent permitted by law, {COMPANY.brandName} is not liable for indirect, incidental, special or consequential losses, lost profits or lost data, or for actions of Meta or other third parties. Our total liability: <Detail value={COMPANY.liabilityCap} label="liability cap" />
-      </p>
-    ),
-  },
-  {
-    id: "indemnity",
-    title: "Indemnity",
-    body: (
-      <p>
-        Each Client is responsible for claims arising from its contact data, its lack of valid consent, or message content sent at its request, and will compensate {COMPANY.brandName} for resulting losses to the extent permitted by law.
+        Our liability is subject to the applicable laws of India and to the limitations in these Terms. To the extent permitted by applicable law, {COMPANY.brandName} is not liable for indirect, incidental, special or consequential losses, loss of profits or loss of data, or for actions of Meta or other third parties.
       </p>
     ),
   },
   {
     id: "law",
-    title: "Governing law and disputes",
+    title: "Governing law and jurisdiction",
     body: (
       <p>
-        These Terms are governed by the laws of <Detail value={COMPANY.governingLaw} label="governing law" />. Disputes are subject to the courts of <Detail value={COMPANY.courts} label="courts / jurisdiction" />.
+        These Terms of Service shall be governed by and interpreted in accordance with the laws of India. Any disputes arising out of or in connection with these Terms shall be subject to the jurisdiction of the competent courts in Kerala, India, subject to applicable laws.
       </p>
     ),
   },
@@ -186,8 +186,11 @@ const sections: LegalSection[] = [
     title: "Contact",
     body: (
       <ul>
-        <li>Legal enquiries: <Detail value={COMPANY.legalEmail} label="legal contact email" /></li>
-        <li>Address: <Detail value={COMPANY.registeredAddress} label="registered address" /></li>
+        <li>
+          Legal enquiries:{" "}
+          {COMPANY.legalEmail ? <a href={`mailto:${COMPANY.legalEmail}`} className={link}>{COMPANY.legalEmail}</a> : <Detail value={null} label="legal contact email" />}
+        </li>
+        <li>Address: <Detail value={COMPANY.legalName} label="legal company name" />, <Detail value={COMPANY.registeredAddress} label="registered address" /></li>
       </ul>
     ),
   },
@@ -199,7 +202,7 @@ export default function TermsOfServicePage() {
       title="Terms of Service"
       summary={
         <p>
-          These Terms set the rules for using {COMPANY.productName}: consent and WhatsApp compliance, acceptable use and anti-spam rules, responsibilities, termination and liability.
+          These Terms set the rules for using {COMPANY.productName}: eligibility, responsibilities, WhatsApp messaging and consent, prohibited activities, suspension and termination, liability and governing law.
         </p>
       }
       sections={sections}

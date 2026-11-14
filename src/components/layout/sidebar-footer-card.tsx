@@ -26,6 +26,7 @@ export function SidebarFooterCard({ collapsed = false }: { collapsed?: boolean }
     );
   }
   return (
+    <>
     <Link href="/whatsapp-account" className="block rounded-xl border border-sidebar-border bg-sidebar-accent/50 p-3 transition-colors hover:bg-sidebar-accent">
       <div className="flex items-center gap-2">
         <span className={cn("size-2 rounded-full", status.dot)} aria-hidden="true" />
@@ -33,5 +34,10 @@ export function SidebarFooterCard({ collapsed = false }: { collapsed?: boolean }
       </div>
       <p className="mt-1 truncate text-[11px] text-sidebar-muted-foreground">{workspace.whatsappAccount.phoneNumber || workspace.name}</p>
     </Link>
+    <nav aria-label="Legal" className="mt-2 flex justify-center gap-3 text-[11px] text-sidebar-muted-foreground">
+      <Link href="/privacy-policy" className="hover:text-white">Privacy Policy</Link>
+      <Link href="/terms-of-service" className="hover:text-white">Terms</Link>
+    </nav>
+    </>
   );
 }

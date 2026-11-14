@@ -22,6 +22,7 @@ import type { RecipientProgress } from "@/types/funnel";
 import type { WhatsAppTemplate } from "@/types/template";
 import type { Workspace } from "@/types/workspace";
 
+import { deleteContactLinkedData } from "./contact-deletion";
 import { ApiError } from "./errors";
 import { db } from "./firebase-admin";
 import type { SyncPayload } from "./schemas";
@@ -236,7 +237,7 @@ export async function sendTestTemplate(workspaceId: string, input: { to: string;
 }
 
 /** Applies client edits after enforcing the business rules server-side. Returns new contact ids. */
-export async function applySync(workspaceId: string, payload: SyncPayload): Promise<{ createdContactIds: string[] }> {
+export async function applySync(workspaceId: string, payload: SyncPayload): Promise<{ createdContactIds: string[]; deletedContactCount: number }> {
   const workspace = await requireWorkspace(workspaceId);
   const ref = wsRef(workspaceId);
   const now = new Date().toISOString();
@@ -281,10 +282,15 @@ export async function applySync(workspaceId: string, payload: SyncPayload): Prom
     }
     if (created.length > 5) log({ type: "contacts_imported", message: `${created.length} contacts added` });
     else payload.contacts.upsert.filter((c) => !existing.has(c.id)).forEach((c) => log({ type: "contact_created", message: `${c.fullName} added`, contactId: c.id }));
+    // Complete deletion: remove every linked record BEFORE the contact itself, so a
+    // failure leaves the contact visible and the deletion can simply be retried.
+    const toErase = payload.contacts.delete.filter((id) => existing.has(id));
+    if (toErase.length) await deleteContactLinkedData(workspaceId, toErase);
     for (const contactId of payload.contacts.delete) {
       del("contacts", contactId);
-      log({ type: "contact_deleted", message: `${existing.get(contactId)?.fullName ?? "Contact"} deleted`, contactId });
     }
+    // No name in the log: the person's details are being erased.
+    if (toErase.length) log({ type: "contact_deleted", message: `${toErase.length} contact${toErase.length === 1 ? "" : "s"} and all linked data deleted` });
   }
 
   // ---- groups / tags: unique names; groups & segments in use by live campaigns can't be deleted
@@ -359,7 +365,7 @@ export async function applySync(workspaceId: string, payload: SyncPayload): Prom
   }
 
   await commitInChunks(db(), ops);
-  return { createdContactIds: createdIds };
+  return { createdContactIds: createdIds, deletedContactCount: payload.contacts.delete.length };
 }
 
 export type CampaignAction = "launch" | "pause" | "resume" | "stop";

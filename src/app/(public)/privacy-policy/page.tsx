@@ -10,6 +10,9 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
+const mail = (address: string | null, label: string) =>
+  address ? <a href={`mailto:${address}`} className="text-primary underline-offset-4 hover:underline">{address}</a> : <Detail value={null} label={label} />;
+
 const sections: LegalSection[] = [
   {
     id: "who-we-are",
@@ -18,11 +21,12 @@ const sections: LegalSection[] = [
       <>
         <p>
           {COMPANY.productName} (the “Service”) is a WhatsApp communication and automation platform operated by{" "}
-          <Detail value={COMPANY.legalName} label="legal company name" />, registered at{" "}
-          <Detail value={COMPANY.registeredAddress} label="registered address" /> (“{COMPANY.brandName}”, “we”, “us”).
+          <strong><Detail value={COMPANY.legalName} label="legal company name" /></strong>, {" "}
+          <Detail value={COMPANY.registeredAddress} label="registered address" /> (“{COMPANY.brandName}”, “we”, “us”), registered in{" "}
+          <Detail value={COMPANY.countryOfRegistration} label="country of registration" />.
         </p>
         <p>
-          The Service is used by {COMPANY.brandName} to manage WhatsApp communication for its own brands and for client organisations (“Clients”). Each Client’s data is kept in a separate workspace.
+          {COMPANY.brandName} uses the Service to manage WhatsApp communication for its own brands and for client organisations (“Clients”). Each brand or Client has a separate workspace.
         </p>
       </>
     ),
@@ -32,20 +36,16 @@ const sections: LegalSection[] = [
     title: "Who this policy covers",
     body: (
       <ul>
-        <li><strong>The administrator</strong> — the single authorised operator account that signs in to the Service. There is no public sign-up.</li>
+        <li><strong>The administrator</strong> — the authorised operator account that signs in to the Service. There is no public sign-up.</li>
         <li><strong>Contacts</strong> — people whose details are added to a workspace and who may receive or send WhatsApp messages through the Service.</li>
         <li><strong>Visitors of tracked links</strong> — people who open a link sent in a campaign message.</li>
-        <li>
-          <strong>Clients</strong> — organisations on whose behalf {COMPANY.brandName} operates a workspace. For contact data in a Client workspace,{" "}
-          {COMPANY.brandName} acts on the Client’s instructions; the Client decides why contacts are messaged.{" "}
-          <Detail value={COMPANY.processorAgreement} label="whether Clients sign a data-processing agreement, and the controller/processor roles" />
-        </li>
+        <li><strong>Clients</strong> — organisations for which {COMPANY.brandName} operates a workspace.</li>
       </ul>
     ),
   },
   {
     id: "data-we-collect",
-    title: "Data we collect",
+    title: "Information we collect",
     body: (
       <>
         <p><strong>Contact information</strong> (entered by the administrator or imported from a file):</p>
@@ -69,7 +69,7 @@ const sections: LegalSection[] = [
   },
   {
     id: "how-collected",
-    title: "How data is collected",
+    title: "How information is collected",
     body: (
       <ul>
         <li><strong>Entered manually</strong> by the administrator.</li>
@@ -84,7 +84,7 @@ const sections: LegalSection[] = [
   },
   {
     id: "purposes",
-    title: "How we use data",
+    title: "How we use information",
     body: (
       <>
         <ul>
@@ -94,58 +94,54 @@ const sections: LegalSection[] = [
           <li>To show delivery, engagement and campaign reports to the administrator.</li>
           <li>To secure the Service (authentication, rate limiting, audit logs).</li>
         </ul>
-        <p>Marketing messages are sent only to contacts recorded as opted in with a consent source and date. We do not sell personal data or use it for advertising.</p>
+        <p>We do not sell personal data or use it for advertising.</p>
+      </>
+    ),
+  },
+  {
+    id: "storage",
+    title: "How contact information is stored and processed",
+    body: (
+      <>
+        <p>
+          Contact information is stored in a database ({FACTS.databaseProvider}) hosted in Google Cloud region <strong>{FACTS.databaseRegion}</strong>, separated by workspace. The application that processes it runs on {FACTS.hostingProvider} servers in the <strong>{FACTS.hostingRegion}</strong>. Information is read and written only by the application server; browsers cannot access the database directly.
+        </p>
+        <p>
+          WhatsApp messages are processed by Meta, which may process data in other countries. Personal data may therefore be transferred outside the country where it was collected.
+        </p>
       </>
     ),
   },
   {
     id: "whatsapp",
-    title: "WhatsApp and Meta",
+    title: "WhatsApp messaging and consent",
     body: (
       <>
         <p>
           Messages are sent and received through the {FACTS.messagingProvider}. To deliver a message, the recipient’s phone number and the message content are sent to Meta. Meta sends us messages from contacts and delivery/read notifications. Meta processes this data under its own terms and privacy policy.
         </p>
         <p>
-          Promotional messages outside WhatsApp’s 24-hour customer service window use message templates approved by Meta. Free-form replies are sent only within that window.
+          {COMPANY.brandName}, as operator of the Service, or the Client on whose behalf messages are sent, is responsible for ensuring that appropriate WhatsApp consent has been obtained before messages are sent. The Service sends marketing messages only to contacts recorded as opted in with a consent source and date. Messages outside WhatsApp’s 24-hour customer service window use templates approved by Meta.
         </p>
-      </>
-    ),
-  },
-  {
-    id: "consent",
-    title: "Consent and opting out",
-    body: (
-      <>
         <p>
-          A contact can stop messages at any time by replying <strong>STOP</strong>, <strong>UNSUBSCRIBE</strong>, <strong>CANCEL</strong>, <strong>END</strong> or <strong>QUIT</strong>, or by tapping an opt-out button where offered. The contact is then marked as opted out, the change is added to their consent history, any active message sequence stops, and the Service blocks further campaign and automated messages to them.
+          A contact can stop messages at any time by replying <strong>STOP</strong>, <strong>UNSUBSCRIBE</strong>, <strong>CANCEL</strong>, <strong>END</strong> or <strong>QUIT</strong>, or by tapping an opt-out button where offered. The contact is then marked as opted out, the change is added to their consent history, any active message sequence stops, and the Service blocks further campaign and automated messages to them. Opt-outs reported by Meta are also recorded.
         </p>
-        <p>Opt-outs reported by Meta (for example, a person stopping marketing messages from the business inside WhatsApp) are also recorded.</p>
       </>
     ),
   },
   {
     id: "sharing",
-    title: "Who we share data with",
+    title: "Who we share information with",
     body: (
       <>
         <p>We use these service providers to run the Service:</p>
         <ul>
-          <li><strong>Google Firebase</strong> — database and administrator authentication ({FACTS.databaseProvider}).</li>
+          <li><strong>Google Firebase</strong> — database and administrator authentication.</li>
           <li><strong>{FACTS.hostingProvider}</strong> — application hosting.</li>
           <li><strong>Meta</strong> — WhatsApp message delivery, as described above.</li>
         </ul>
-        <p>Contact data in a Client workspace is available to that Client through the Service operator. We do not sell or rent personal data. We may disclose data where required by law.</p>
+        <p>We do not sell or rent personal data. We may disclose information where required by law.</p>
       </>
-    ),
-  },
-  {
-    id: "transfers",
-    title: "Where data is stored",
-    body: (
-      <p>
-        The database is hosted in Google Cloud region <strong>{FACTS.databaseRegion}</strong>. The application runs on {FACTS.hostingProvider} servers in the <strong>{FACTS.hostingRegion}</strong>. WhatsApp messages are processed by Meta, which may process data in other countries. Personal data may therefore be transferred outside the country where it was collected.
-      </p>
     ),
   },
   {
@@ -156,7 +152,7 @@ const sections: LegalSection[] = [
         <p>Measures in place:</p>
         <ul>
           <li>All connections use HTTPS.</li>
-          <li>Data is read and written only by the application server after the administrator’s session is verified; the database rejects direct access from browsers.</li>
+          <li>Information is read and written only by the application server after the administrator’s session is verified; the database rejects direct access from browsers.</li>
           <li>A single administrator account; sign-in sessions use secure, HTTP-only cookies and are checked on every request.</li>
           <li>Sign-in attempts and changes are rate-limited; important actions are recorded in an audit log.</li>
           <li>Each workspace’s data is kept separate and checked on the server.</li>
@@ -169,32 +165,50 @@ const sections: LegalSection[] = [
   },
   {
     id: "retention",
-    title: "How long we keep data",
+    title: "Data retention",
     body: (
       <>
         <p>
-          The Service does not currently delete data automatically on a schedule. Contact records, messages, campaign records, link clicks, activity and audit logs are kept until they are deleted by the administrator or the workspace is deleted.
+          The Service does not delete data automatically on a schedule. Information is kept while the workspace it belongs to is active, until it is deleted by the administrator or in response to a deletion request. Deleting a contact removes all of that person’s data, as described below.
         </p>
         <p>
-          Planned retention periods: <Detail value={COMPANY.retentionPeriods} label="retention periods" />
+          Retention period: <Detail value={COMPANY.generalRetention} label="what the 30-day retention period applies to" />
         </p>
       </>
     ),
   },
   {
+    id: "termination",
+    title: "Workspace termination",
+    body: (
+      <p>
+        When a Client workspace is terminated, its data is retained for <Detail value={COMPANY.workspaceTerminationRetention} label="post-termination retention" /> following termination, subject to applicable legal requirements, and is then deleted. Deleting a workspace permanently removes all of its data from the Service.
+      </p>
+    ),
+  },
+  {
+    id: "export",
+    title: "Data export",
+    body: (
+      <p>
+        Contact lists can be exported from the Service as CSV or Excel files (including consent status and dates), and reports as CSV files. You can ask us for an export of your contact data using the contact details below.
+      </p>
+    ),
+  },
+  {
     id: "data-deletion",
-    title: "Your rights and data deletion",
+    title: "Privacy requests and data deletion",
     body: (
       <>
         <p>
-          You can ask us to access, correct or delete your personal data, or to stop messaging you. Send requests to <Detail value={COMPANY.privacyEmail} label="privacy contact email" />. We will respond within <Detail value={COMPANY.requestResponseTime} label="response time" />.
+          You can ask us to access, correct, export or delete your personal information, or to stop messaging you, by emailing {mail(COMPANY.privacyEmail, "privacy contact email")}. We respond to privacy requests within <Detail value={COMPANY.requestResponseTime} label="response time" />. Deletion requests are processed within <Detail value={COMPANY.deletionRequestTime} label="deletion time" /> of the request being confirmed.
         </p>
-        <p><strong>What deletion covers today:</strong></p>
+        <p><strong>What deletion covers:</strong></p>
         <ul>
-          <li>Deleting a contact removes the contact record: name, phone number, email, location, organisation, groups, tags, custom fields and consent history.</li>
           <li>
-            It does <strong>not</strong> currently remove related records linked to that contact — conversation messages, campaign participation records, link-click records, activity entries and automation history. How these related records are handled when you request deletion: <Detail value={COMPANY.relatedRecordsDeletion} label="deletion procedure for related records" />
+            Deleting a contact permanently removes the contact record (name, phone number, email, location, organisation, groups, tags, custom fields and consent history) <strong>and all records linked to that contact</strong>: conversations and messages, campaign participation and delivery records, link-click records, automation history, activity entries and WhatsApp message references.
           </li>
+          <li>After deletion, an audit entry records that a deletion took place, without the person’s details.</li>
           <li>Deleting a workspace permanently removes all data in that workspace.</li>
         </ul>
         <p>Messages already delivered to your WhatsApp account, and data held by Meta, are governed by WhatsApp’s own policies.</p>
@@ -212,10 +226,10 @@ const sections: LegalSection[] = [
   },
   {
     id: "children",
-    title: "Children",
+    title: "Age",
     body: (
       <p>
-        The Service is not directed at children. Minimum age for contacts: <Detail value={COMPANY.minimumAge} label="minimum age" />.
+        The Service is intended for people aged <Detail value={COMPANY.minimumAge} label="minimum age" /> and over and must not be used to collect information about, or send messages to, anyone younger.
       </p>
     ),
   },
@@ -226,14 +240,12 @@ const sections: LegalSection[] = [
   },
   {
     id: "contact",
-    title: "Contact and grievances",
+    title: "Contact and grievance officer",
     body: (
       <ul>
-        <li>Privacy enquiries: <Detail value={COMPANY.privacyEmail} label="privacy contact email" /></li>
-        <li>
-          Grievance Officer: <Detail value={COMPANY.grievanceOfficerName} label="Grievance Officer name" />, <Detail value={COMPANY.grievanceOfficerEmail} label="Grievance Officer email" />
-        </li>
-        <li>Postal address: <Detail value={COMPANY.registeredAddress} label="registered address" /></li>
+        <li>Privacy enquiries: {mail(COMPANY.privacyEmail, "privacy contact email")}</li>
+        <li>Grievance Officer: <Detail value={COMPANY.grievanceOfficerName} label="Grievance Officer" />, {mail(COMPANY.grievanceOfficerEmail, "Grievance Officer email")}</li>
+        <li>Postal address: <Detail value={COMPANY.legalName} label="legal company name" />, <Detail value={COMPANY.registeredAddress} label="registered address" /></li>
         <li>See also our <Link href="/terms-of-service" className="text-primary underline-offset-4 hover:underline">Terms of Service</Link>.</li>
       </ul>
     ),
@@ -246,7 +258,7 @@ export default function PrivacyPolicyPage() {
       title="Privacy Policy"
       summary={
         <p>
-          This policy explains what personal data {COMPANY.productName} collects, how it is used for WhatsApp messaging, where it is stored, who it is shared with, and the choices people have — including how to stop messages and request deletion.
+          This policy explains what personal information {COMPANY.productName} collects, how it is stored and used for WhatsApp messaging, who it is shared with, how long it is kept, and how to export or delete it or stop receiving messages.
         </p>
       }
       sections={sections}
