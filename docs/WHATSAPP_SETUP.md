@@ -17,7 +17,7 @@ This guide connects a workspace to the official WhatsApp Cloud API (Meta Graph A
 | Conversation replies inside the 24-hour window | `src/lib/server/conversations.ts` |
 | Automation “Send template” actions (templates without variables) | `src/lib/server/automation-runner.ts` |
 
-Phase 3 adds the webhook (see §9). Still not implemented: template submission/sync, sending media, dynamic URL buttons.
+Phase 3 adds the webhook (see §9). Template status sync is described in §10. Still not implemented: template submission to Meta, sending media, dynamic URL buttons.
 
 ## 1. Meta prerequisites (manual)
 
@@ -81,7 +81,7 @@ Free-form text (conversation replies) only works within 24 hours of the customer
 
 ## 8. Known limitations (this phase)
 
-- Templates become sendable only when their status is `approved`, which is set exclusively by Meta template sync (Phase 7). Until then, campaigns can’t launch; use the test message to confirm connectivity.
+- Templates become sendable only when their status is `approved`, which is set exclusively by Meta template sync (§10).
 - Template media headers, header variables and dynamic URL buttons are rejected with a clear error.
 - Tracked links can’t be injected into static template URL buttons; tracking via templates needs dynamic URL buttons (planned with template sync).
 - Throughput protection is per server instance (minimum 80 ms between sends per number); Meta rate-limit errors are classified as retryable.
@@ -129,3 +129,15 @@ Routing uses only `metadata.phone_number_id` → the single workspace configured
 - A reply without context to a contact in several active campaigns counts as a reply in each.
 - Media is recorded by media id; downloading media files is not implemented.
 - Processing runs inside the request; very large bursts rely on Meta’s retries rather than a queue.
+
+## 10. Template status sync
+
+Templates are created and submitted in **WhatsApp Manager → Message templates**; the dashboard reads their real status from Meta.
+
+- **Templates → Sync from Meta** calls `POST /api/workspaces/{id}/whatsapp/templates/sync`, which reads `GET /{waba-id}/message_templates` (all pages) with the server token. Requires `whatsapp_business_management`.
+- Uses the workspace’s own WABA ID. Each synced template records the WABA it came from, and the sender refuses a template whose WABA differs from the workspace’s current one.
+- Meta statuses: `APPROVED` → Approved, `PENDING`/`IN_APPEAL` → Pending, `REJECTED` → Rejected (with reason), `PAUSED` → Paused, anything else (`DISABLED`, `DELETED`, `LIMIT_EXCEEDED`, …) → Disabled. Only Approved can be sent.
+- Existing dashboard templates are updated by Meta template id, then by name + language — no duplicates. Synced templates are read-only in the dashboard. Templates removed from Meta become Disabled; local drafts are untouched.
+- If the sync fails (expired token, missing permission, network, partial results) nothing is changed; the error and the last successful sync time are shown on the Templates page.
+- Before each scheduled campaign or automation send, the cron job syncs again. If Meta can’t confirm statuses, nothing is sent in that run. Recipients waiting on a Paused template are held and retried hourly instead of exiting.
+- Authentication templates and templates with OTP, copy-code, flow or catalog buttons, location headers or other unsupported parts are synced and shown but can’t be sent from the dashboard yet.

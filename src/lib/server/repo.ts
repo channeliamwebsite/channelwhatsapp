@@ -170,7 +170,8 @@ export async function updateWhatsAppConfig(workspaceId: string, input: { busines
       // Saved IDs are unverified until the API integration checks them with Meta.
       status: changedIds || prev.status !== "connected" ? (input.phoneNumberId && input.wabaId ? "pending" : "disconnected") : prev.status,
       webhookStatus: prev.webhookStatus ?? "not_configured",
-      templateSync: prev.templateSync ?? { status: "never" },
+      // Templates synced from a previous WABA can no longer be sent (wabaId mismatch) until the next sync.
+      templateSync: changedIds ? { status: "never" } : prev.templateSync ?? { status: "never" },
       verification: changedIds ? null : prev.verification ?? null,
     },
     updatedAt: now,
@@ -210,6 +211,37 @@ export async function verifyWhatsAppConnection(workspaceId: string) {
   logActivity(batch, workspaceId, { type: "workspace_updated", message: connected ? "WhatsApp connection verified" : `WhatsApp verification: ${result.status.replace("_", " ")}` }, now);
   await batch.commit();
   return { status: result.status, message: result.message };
+}
+
+export type TemplateSyncResult =
+  | { ok: true; total: number; created: number; updated: number; unchanged: number; missing: number; lastSyncedAt: string }
+  | { ok: false; message: string };
+
+/**
+ * Pull this workspace's templates from Meta (its own WABA) and store Meta's
+ * real status. On any failure, templates are left exactly as they were and
+ * only the sync status records the error.
+ */
+export async function syncTemplatesFromMeta(workspaceOrId: string | Workspace): Promise<TemplateSyncResult> {
+  const { fetchMetaTemplates } = await import("./whatsapp/template-sync");
+  const { planTemplateSync } = await import("./whatsapp/template-sync-rules");
+  const workspace = typeof workspaceOrId === "string" ? await requireWorkspace(workspaceOrId) : workspaceOrId;
+  const prev = workspace.whatsappAccount.templateSync;
+  const fetched = await fetchMetaTemplates(workspace);
+  const now = new Date().toISOString();
+  if (!fetched.ok) {
+    await wsRef(workspace.id).update({ "whatsappAccount.templateSync": { status: "error", message: fetched.message, lastSyncedAt: prev?.lastSyncedAt, lastAttemptAt: now } });
+    return { ok: false, message: fetched.message };
+  }
+  const local = await listOwned<WhatsAppTemplate>(workspace.id, "templates");
+  const plan = planTemplateSync(local, fetched.templates, { workspaceId: workspace.id, wabaId: fetched.wabaId, now, newId: () => `tpl_${crypto.randomUUID().slice(0, 10)}` });
+  const col = wsRef(workspace.id).collection("templates");
+  const summary = `${fetched.templates.length} template${fetched.templates.length === 1 ? "" : "s"} in Meta · ${plan.created} new · ${plan.updated} updated${plan.missing ? ` · ${plan.missing} no longer in Meta` : ""}`;
+  const ops: ((b: WriteBatch) => void)[] = plan.writes.map((t) => (b) => b.set(col.doc(t.id), t as DocumentData));
+  ops.push((b) => b.update(wsRef(workspace.id), { "whatsappAccount.templateSync": { status: "ok", message: summary, lastSyncedAt: now, lastAttemptAt: now } }));
+  if (plan.writes.length) ops.push((b) => logActivity(b, workspace.id, { type: "workspace_updated", message: `Templates synced from Meta: ${summary}` }, now));
+  await commitInChunks(db(), ops);
+  return { ok: true, total: fetched.templates.length, created: plan.created, updated: plan.updated, unchanged: plan.unchanged, missing: plan.missing, lastSyncedAt: now };
 }
 
 /** Send one approved template by name (e.g. Meta's "hello_world") to test the connection. */
@@ -354,6 +386,7 @@ export async function applySync(workspaceId: string, payload: SyncPayload): Prom
       if (t.status === "approved" || t.status === "rejected") {
         if (!prev || prev.status !== t.status) throw new ApiError(403, "Approval status comes from Meta and can’t be set here.");
       }
+      if (prev?.metaTemplateId) throw new ApiError(409, `“${prev.name}” is managed in Meta and updated by template sync. Edit it in WhatsApp Manager, or duplicate it as a new draft.`);
       if (prev && (prev.status === "approved" || prev.status === "pending")) throw new ApiError(409, `“${prev.name}” is ${prev.status === "approved" ? "approved" : "awaiting Meta review"} and can’t be edited. Create a new template instead.`);
       if ([...existing.values()].some((x) => x.id !== t.id && x.name === t.name && x.language === t.language)) throw new ApiError(409, `A template named ${t.name} (${t.language}) already exists.`);
       put("templates", t.id, { ...t, createdAt: prev?.createdAt ?? now, updatedAt: now, rejectedReason: t.status === "draft" ? undefined : prev?.rejectedReason });

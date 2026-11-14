@@ -23,7 +23,7 @@ import type { Workspace } from "@/types/workspace";
 import { enqueueTrigger } from "./automation-runner";
 
 import { db } from "./firebase-admin";
-import { listOwned, wsRef } from "./repo";
+import { listOwned, syncTemplatesFromMeta, wsRef } from "./repo";
 
 import { getSender, type MessageSender } from "./sender";
 import { recordWaMessage } from "./whatsapp/message-map";
@@ -109,7 +109,10 @@ export async function ingestEvent(e: FunnelEventInput) {
 }
 
 // ---------------------------------------------------------------- processing
-export type ProcessSummary = { workspaceId: string; sent: number; exited: number; completed: number; skipped?: string };
+export type ProcessSummary = { workspaceId: string; sent: number; exited: number; completed: number; held?: number; skipped?: string };
+
+/** A paused template (Meta quality pause) is temporary: recipients wait instead of exiting. */
+const PAUSED_RETRY_HOURS = 1;
 
 /** Advance every due recipient of a workspace's active campaigns. */
 export async function processWorkspace(workspace: Workspace, now: string, limit = 200): Promise<ProcessSummary> {
@@ -120,6 +123,9 @@ export async function processWorkspace(workspace: Workspace, now: string, limit 
   const ws = wsRef(workspace.id);
   const due = await ws.collection("recipients").where("state", "==", "waiting").where("nextActionAt", "<=", now).limit(limit).get();
   if (due.empty) return summary;
+  // Recheck Meta's template status before sending. If Meta can't confirm it, send nothing this run.
+  const fresh = await syncTemplatesFromMeta(workspace);
+  if (!fresh.ok) return { ...summary, skipped: `Template status could not be confirmed with Meta: ${fresh.message}` };
   const [campaigns, templates] = await Promise.all([listOwned<Campaign>(workspace.id, "campaigns"), listOwned<WhatsAppTemplate>(workspace.id, "templates")]);
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
   const templateById = new Map(templates.map((t) => [t.id, t]));
@@ -146,6 +152,11 @@ export async function processWorkspace(workspace: Workspace, now: string, limit 
 
     const contact = (await ws.collection("contacts").doc(p.contactId).get()).data() as Contact | undefined;
     const template = templateById.get(action.templateId);
+    if (template?.status === "paused") {
+      await doc.ref.update({ nextActionAt: addHours(now, PAUSED_RETRY_HOURS) });
+      summary.held = (summary.held ?? 0) + 1;
+      continue;
+    }
     const progressForGuard = pending ? { ...p, messages: p.messages.filter((m) => m !== pending) } : p;
     const guard = checkSendGuards({ campaign, contact, template, progress: progressForGuard, step: action.step });
     if (!guard.ok) {

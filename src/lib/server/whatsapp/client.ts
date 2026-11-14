@@ -5,6 +5,7 @@
  */
 import { GRAPH_BASE_URL, isMetaId } from "./config";
 import { classifyMetaError, WhatsAppApiError } from "./errors";
+import { META_TEMPLATE_FIELDS, parseMetaTemplate, type MetaTemplate } from "./template-sync-rules";
 
 export type FetchLike = (input: string, init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
@@ -101,6 +102,31 @@ export function createWhatsAppClient(options: ClientOptions) {
       const j = await request<{ data?: { id?: unknown }[] }>("GET", `${wabaId}/phone_numbers?fields=id&limit=100`);
       if (!Array.isArray(j.data)) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned no phone number list." });
       return j.data.map((d) => d.id).filter((x): x is string => typeof x === "string");
+    },
+
+    /**
+     * GET /{waba-id}/message_templates — EVERY page (needs whatsapp_business_management).
+     * Throws rather than return a partial list: a partial list would make the
+     * sync treat the missing templates as deleted.
+     */
+    async listTemplates(wabaId: string, maxPages = 50): Promise<MetaTemplate[]> {
+      if (!isMetaId(wabaId)) throw new WhatsAppApiError({ category: "invalid_request", retryable: false, message: "Invalid WhatsApp Business Account ID." });
+      const templates: MetaTemplate[] = [];
+      let after: string | undefined;
+      for (let page = 0; page < maxPages; page++) {
+        const query = new URLSearchParams({ fields: META_TEMPLATE_FIELDS, limit: "100", ...(after ? { after } : {}) });
+        const j = await request<{ data?: unknown[]; paging?: { cursors?: { after?: unknown }; next?: unknown } }>("GET", `${wabaId}/message_templates?${query}`);
+        if (!Array.isArray(j.data)) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned no template list." });
+        for (const item of j.data) {
+          const t = parseMetaTemplate(item);
+          if (!t) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned a template in an unexpected format." });
+          templates.push(t);
+        }
+        const cursor = j.paging?.cursors?.after;
+        after = typeof j.paging?.next === "string" && typeof cursor === "string" && cursor ? cursor : undefined;
+        if (!after) return templates;
+      }
+      throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: `More than ${maxPages * 100} templates — sync stopped without changes.` });
     },
   };
 }
