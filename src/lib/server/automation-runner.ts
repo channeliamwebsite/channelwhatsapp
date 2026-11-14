@@ -16,6 +16,7 @@ import type { WhatsAppTemplate } from "@/types/template";
 import type { Workspace } from "@/types/workspace";
 
 import { getSender } from "./sender";
+import { recordWaMessage } from "./whatsapp/message-map";
 import { db } from "./firebase-admin";
 import { commitInChunks, listOwned, wsRef } from "./repo";
 
@@ -82,7 +83,10 @@ export async function processDueRuns(workspace: Workspace, now: string, limit = 
         if (!template) { outcomes.push("template missing"); failed = true; continue; }
         if (placeholderCount([template]) > 0) { outcomes.push(`${template.name}: needs variables (not supported in automations yet)`); failed = true; continue; }
         const result = await sender.send({ to: toSend.contact.phone, template, variables: [], buttonUrls: [] });
-        if (result.ok) outcomes.push(`${template.name} sent`);
+        if (result.ok) {
+          outcomes.push(`${template.name} sent`);
+          await recordWaMessage({ waMessageId: result.waMessageId, workspaceId: workspace.id, kind: "automation", contactId: toSend.contact.id });
+        }
         else { outcomes.push(`${template.name}: ${result.error}`); failed = true; }
       }
       await doc.ref.update({ status: failed ? "failed" : "succeeded", detail: outcomes.join("; "), executedAt: new Date().toISOString() });

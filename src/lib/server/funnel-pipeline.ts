@@ -10,6 +10,7 @@
 import type { DocumentData } from "firebase-admin/firestore";
 
 import { addHours, applyEvent, checkSendGuards, dedupeKey, planNextAction, waitAfter } from "@/lib/funnel/engine";
+import { nextDeliveryStatus } from "@/lib/funnel/status";
 import { resolveVariables } from "@/lib/funnel/variables";
 import { createTrackedToken } from "@/lib/tracking/links";
 import { withUtm } from "@/lib/tracking/utm";
@@ -25,6 +26,7 @@ import { db } from "./firebase-admin";
 import { listOwned, wsRef } from "./repo";
 
 import { getSender, type MessageSender } from "./sender";
+import { recordWaMessage } from "./whatsapp/message-map";
 export type { MessageSender };
 
 // ---------------------------------------------------------------- ingestion
@@ -41,7 +43,6 @@ export type FunnelEventInput = {
   error?: { message: string; retryable: boolean };
 };
 
-const RANK: Record<DeliveryStatus, number> = { queued: 0, sent: 1, delivered: 2, read: 3, failed: 1 };
 
 export async function ingestEvent(e: FunnelEventInput) {
   const ws = wsRef(e.workspaceId);
@@ -63,13 +64,17 @@ export async function ingestEvent(e: FunnelEventInput) {
       case "sent":
       case "delivered":
       case "read":
-        update((m) => (RANK[e.type as DeliveryStatus] > RANK[m.status] || m.status === "failed"
-          ? { ...m, status: e.type as DeliveryStatus, deliveredAt: e.type !== "sent" ? m.deliveredAt ?? e.at : m.deliveredAt, readAt: e.type === "read" ? e.at : m.readAt }
-          : m));
+        update((m) => {
+          const status = nextDeliveryStatus(m.status, e.type as DeliveryStatus) as DeliveryStatus;
+          if (status === m.status) return m; // duplicate or out-of-order: never regress
+          return { ...m, status, deliveredAt: status !== "sent" ? m.deliveredAt ?? e.at : m.deliveredAt, readAt: status === "read" ? m.readAt ?? e.at : m.readAt };
+        });
         break;
       case "failed": {
         const msg = r.messages.find((m) => m.step === step);
-        const canRetry = e.error?.retryable && (msg?.attempts ?? 1) <= campaign.funnel.retry.maxAttempts;
+        // A message already delivered/read can't fail afterwards (late or duplicate event).
+        if (!msg || nextDeliveryStatus(msg.status, "failed") !== "failed") break;
+        const canRetry = e.error?.retryable && (msg.attempts ?? 1) <= campaign.funnel.retry.maxAttempts;
         update((m) => ({ ...m, status: canRetry ? "queued" : "failed", failedReason: e.error?.message }));
         if (canRetry) r = { ...r, nextActionAt: addHours(e.at, campaign.funnel.retry.delayMinutes / 60) };
         break;
@@ -173,7 +178,10 @@ export async function processWorkspace(workspace: Workspace, now: string, limit 
       currentStep: action.step,
       nextActionAt: retryLater ? addHours(now, campaign.funnel.retry.delayMinutes / 60) : addHours(now, waitAfter(action.step, campaign)),
     });
-    if (result.ok) summary.sent++;
+    if (result.ok) {
+      summary.sent++;
+      await recordWaMessage({ waMessageId: result.waMessageId, workspaceId: workspace.id, kind: "funnel", campaignId: campaign.id, contactId: p.contactId, step: action.step });
+    }
   }
   return summary;
 }

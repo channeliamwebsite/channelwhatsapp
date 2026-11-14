@@ -14,6 +14,8 @@ import { enqueueTrigger } from "./automation-runner";
 import { ApiError } from "./errors";
 import { db } from "./firebase-admin";
 import { getSender } from "./sender";
+import { waMessageDoc } from "./whatsapp/message-map";
+import { nextDeliveryStatus } from "@/lib/funnel/status";
 import { requireWorkspace, wsRef } from "./repo";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -65,15 +67,16 @@ export async function sendReply(workspaceId: string, conversationId: string, tex
   const message: ConversationMessage = { id: ref.id, workspaceId, conversationId, contactId: contact.id, direction: "outbound", type: "text", text, status: "sent", waMessageId: result.waMessageId, timestamp: now };
   const batch = db().batch();
   batch.set(ref, message as DocumentData);
+  batch.set(waMessageDoc(workspaceId, result.waMessageId), { waMessageId: result.waMessageId, workspaceId, kind: "reply", contactId: contact.id, conversationId, messageId: ref.id, createdAt: now });
   batch.update(wsRef(workspaceId).collection("conversations").doc(conversationId), { lastMessageAt: now, lastMessagePreview: text.slice(0, 120), lastDirection: "outbound" });
   await batch.commit();
   return message;
 }
 
-export type InboundMessage = { waMessageId: string; from: string; type: MessageType; text?: string; media?: ConversationMessage["media"]; timestamp: string };
+export type InboundMessage = { waMessageId: string; from: string; type: MessageType; text?: string; media?: ConversationMessage["media"]; timestamp: string; contextId?: string };
 
 /** Idempotently store an inbound WhatsApp message and update its conversation. */
-export async function ingestInboundMessage(workspaceId: string, m: InboundMessage) {
+export async function ingestInboundMessage(workspaceId: string, m: InboundMessage): Promise<{ contactId: string; conversationId: string; duplicate: boolean }> {
   const phone = validatePhone(m.from.startsWith("+") ? m.from : `+${m.from}`);
   if (!phone.valid) throw new ApiError(400, "Invalid sender number");
   const ws = wsRef(workspaceId);
@@ -88,27 +91,38 @@ export async function ingestInboundMessage(workspaceId: string, m: InboundMessag
   }
   const conversationId = `conv_${contact.id}`;
   const messageRef = ws.collection("messages").doc(`in_${m.waMessageId}`.replace(/[^A-Za-z0-9_\-.]/g, "_"));
-  await db().runTransaction(async (tx) => {
-    if ((await tx.get(messageRef)).exists) return; // duplicate webhook delivery
+  const duplicate = await db().runTransaction(async (tx) => {
+    if ((await tx.get(messageRef)).exists) return true; // duplicate webhook delivery
     const convRef = ws.collection("conversations").doc(conversationId);
     const conv = (await tx.get(convRef)).data() as Conversation | undefined;
-    const message: ConversationMessage = { id: messageRef.id, workspaceId, conversationId, contactId: contact!.id, direction: "inbound", type: m.type, text: m.text, media: m.media, status: "received", waMessageId: m.waMessageId, timestamp: m.timestamp };
+    const message: ConversationMessage = { id: messageRef.id, workspaceId, conversationId, contactId: contact!.id, direction: "inbound", type: m.type, text: m.text, media: m.media, status: "received", waMessageId: m.waMessageId, contextWaMessageId: m.contextId, timestamp: m.timestamp };
     tx.set(messageRef, message as DocumentData);
     tx.set(convRef, {
       id: conversationId, workspaceId, contactId: contact!.id, status: conv?.status === "closed" ? "open" : conv?.status ?? "open",
       unreadCount: (conv?.unreadCount ?? 0) + 1, lastMessageAt: m.timestamp, lastMessagePreview: (m.text ?? `[${m.type}]`).slice(0, 120), lastDirection: "inbound", lastInboundAt: m.timestamp,
     } satisfies Conversation as DocumentData);
+    return false;
   });
+  // Trigger run ids are deterministic per event, so a retried webhook can't double-trigger.
   await enqueueTrigger(workspaceId, [{ type: "contact_replied", contactId: contact.id, at: m.timestamp }]);
+  return { contactId: contact.id, conversationId, duplicate };
 }
 
-const ORDER: MessageStatus[] = ["queued", "sent", "delivered", "read"];
-
-/** Apply a delivery/read/failed status webhook to an outbound conversation message. */
-export async function applyStatusUpdate(workspaceId: string, waMessageId: string, status: "sent" | "delivered" | "read" | "failed", error?: string) {
-  const snap = await wsRef(workspaceId).collection("messages").where("waMessageId", "==", waMessageId).limit(1).get();
-  const doc = snap.docs[0];
-  if (!doc) return;
-  const current = (doc.data() as ConversationMessage).status;
-  if (status === "failed" || ORDER.indexOf(status) > ORDER.indexOf(current)) await doc.ref.update({ status, ...(error ? { error } : {}) });
+/**
+ * Apply a sent/delivered/read/failed status to an outbound conversation message.
+ * Uses the known message document id when available (from waMessages), else
+ * looks it up by WhatsApp id. Never regresses, idempotent on duplicates.
+ */
+export async function applyStatusUpdate(workspaceId: string, waMessageId: string, status: "sent" | "delivered" | "read" | "failed", at: string, error?: string, messageDocId?: string) {
+  const col = wsRef(workspaceId).collection("messages");
+  const ref = messageDocId ? col.doc(messageDocId) : (await col.where("waMessageId", "==", waMessageId).limit(1).get()).docs[0]?.ref;
+  if (!ref) return;
+  await db().runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const message = snap.data() as ConversationMessage | undefined;
+    if (!message || message.workspaceId !== workspaceId || message.direction !== "outbound" || message.waMessageId !== waMessageId) return;
+    const next = nextDeliveryStatus(message.status as Exclude<MessageStatus, "received">, status);
+    if (next === message.status) return;
+    tx.update(ref, { status: next, statusAt: at, ...(next === "failed" && error ? { error } : {}) });
+  });
 }

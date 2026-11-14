@@ -154,6 +154,11 @@ export async function updateWhatsAppConfig(workspaceId: string, input: { busines
   const workspace = await requireWorkspace(workspaceId);
   const prev = workspace.whatsappAccount;
   const changedIds = prev.phoneNumberId !== input.phoneNumberId || prev.wabaId !== input.wabaId;
+  // Webhooks are routed by Phone Number ID, so one number may belong to only one workspace.
+  if (input.phoneNumberId) {
+    const clash = await db().collection("workspaces").where("whatsappAccount.phoneNumberId", "==", input.phoneNumberId).limit(2).get();
+    if (clash.docs.some((d) => d.id !== workspaceId)) throw new ApiError(409, "This Phone Number ID is already used by another workspace.");
+  }
   const now = new Date().toISOString();
   const batch = db().batch();
   batch.update(wsRef(workspaceId), {
@@ -220,6 +225,8 @@ export async function sendTestTemplate(workspaceId: string, input: { to: string;
     const payload = buildNamedTemplatePayload(input.to, input.templateName, input.languageCode);
     const client = createWhatsAppClient({ accessToken: creds.credentials.accessToken, apiVersion: creds.credentials.apiVersion });
     const res = await client.sendMessage(creds.credentials.phoneNumberId, payload);
+    const { recordWaMessage } = await import("./whatsapp/message-map");
+    await recordWaMessage({ waMessageId: res.messageId, workspaceId, kind: "test" });
     return { messageId: res.messageId, accepted: res.messageStatus ?? "accepted" };
   } catch (error) {
     if (error instanceof PayloadError) throw new ApiError(400, error.message);
