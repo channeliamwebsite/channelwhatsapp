@@ -30,6 +30,10 @@ export type ConversationMessage = {
   status: MessageStatus;
   /** WhatsApp message id — links status webhooks to this message. */
   waMessageId?: string;
+  /** WhatsApp id of the message this inbound message replies to. */
+  contextWaMessageId?: string;
+  /** Meta timestamp of the latest status update. */
+  statusAt?: string;
   error?: string;
   timestamp: string;
 };

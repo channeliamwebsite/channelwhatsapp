@@ -17,7 +17,7 @@ This guide connects a workspace to the official WhatsApp Cloud API (Meta Graph A
 | Conversation replies inside the 24-hour window | `src/lib/server/conversations.ts` |
 | Automation “Send template” actions (templates without variables) | `src/lib/server/automation-runner.ts` |
 
-Not in this phase: webhooks (delivery/read/reply events), template submission/sync, media messages, dynamic URL buttons.
+Phase 3 adds the webhook (see §9). Still not implemented: template submission/sync, sending media, dynamic URL buttons.
 
 ## 1. Meta prerequisites (manual)
 
@@ -41,7 +41,8 @@ Not in this phase: webhooks (delivery/read/reply events), template submission/sy
 |---|---|---|
 | `WHATSAPP_ACCESS_TOKEN` | Yes | System User token (server only) |
 | `META_API_VERSION` | Optional | e.g. `v23.0` (default) |
-| `META_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | Phase 3 | Webhooks — not used yet |
+| `META_APP_SECRET` | Webhooks | App Secret — verifies webhook signatures |
+| `WHATSAPP_VERIFY_TOKEN` | Webhooks | Random string you choose; must match Meta’s webhook “Verify token” |
 
 **Local:** add to `.env.local` (git-ignored), restart `npm run dev`.
 **Vercel:** Project → Settings → Environment Variables → add for **Production** (no quotes around values) → **Redeploy** (env changes only apply to new deployments).
@@ -69,7 +70,7 @@ Only when all pass is the workspace set to **Connected**; sending (campaigns, re
 1. Verify the connection (status **Connected**).
 2. Make sure the recipient’s WhatsApp number can receive messages from your business (for a test number in Meta’s sandbox, add it as an allowed recipient in API Setup).
 3. In **WhatsApp Account → Send a test template**, enter the recipient in international format (e.g. `+9198…`), template `hello_world`, language `en_US` (Meta’s sample template, present in every WABA), and click **Send test**.
-4. A success toast shows the WhatsApp message id = **accepted by Meta**. Delivery/read status will only be visible after the webhook phase.
+4. A success toast shows the WhatsApp message id = **accepted by Meta**. With the webhook configured (§9), its delivery and read statuses are recorded.
 
 Free-form text (conversation replies) only works within 24 hours of the customer’s last message (error 131047 otherwise). Outside that window, only approved templates can be sent.
 
@@ -85,4 +86,46 @@ Free-form text (conversation replies) only works within 24 hours of the customer
 - Tracked links can’t be injected into static template URL buttons; tracking via templates needs dynamic URL buttons (planned with template sync).
 - Throughput protection is per server instance (minimum 80 ms between sends per number); Meta rate-limit errors are classified as retryable.
 - An automation run interrupted mid-send stays in `processing` (visible in history) rather than being retried, to avoid duplicate messages.
-- No webhooks yet: sent messages stay at “sent” until Phase 3 delivers status events.
+
+## 9. Webhooks (Phase 3)
+
+**Callback URL:** `https://<your-domain>/api/webhooks/whatsapp`
+(production: `https://channeliamwebsite-channelwhatsapp.vercel.app/api/webhooks/whatsapp`)
+
+### What the webhook does
+| Event | Result |
+|---|---|
+| Inbound message (text, media, button, interactive; others stored as a labelled placeholder) | Stored in **Conversations** (unknown senders become a contact **without** marketing consent), idempotent by WhatsApp message id |
+| Reply | Funnel `reply` event — for the exact funnel message it answers (context id) or, without context, every campaign where the contact is still active |
+| `STOP`, `UNSUBSCRIBE`, `CANCEL`, `END`, `QUIT`, `STOP ALL`, `OPT OUT`, “Stop updates” button (case/whitespace/punctuation-insensitive; whole message only) | Contact → **opted out** with consent-history entry; active funnels exit; all future sends blocked |
+| Status `sent` / `delivered` / `read` / `failed` | Funnel step and conversation reply updated via the `waMessages` mapping; never regresses (read → delivered), duplicates ignored; failures classified retryable/permanent |
+| Failure code 131050 (user stopped marketing) | Contact opted out |
+
+Routing uses only `metadata.phone_number_id` → the single workspace configured with that Phone Number ID (enforced unique). Events for unknown numbers are acknowledged and ignored.
+
+### Configure in Meta
+1. Set `META_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` in Vercel (Production), **redeploy**.
+2. developers.facebook.com → your app → **WhatsApp → Configuration → Webhook → Edit**:
+   - Callback URL: as above
+   - Verify token: the exact `WHATSAPP_VERIFY_TOKEN` value
+   - Click **Verify and save** (Meta calls `GET …?hub.mode=subscribe&hub.verify_token=…&hub.challenge=…`).
+3. **Webhook fields → Subscribe** to **`messages`** (this field carries both inbound messages and statuses).
+4. Make sure the WhatsApp Business Account is subscribed to your app (WhatsApp → API Setup; or `POST /{WABA_ID}/subscribed_apps` with the System User token).
+
+### Test
+1. **Verification:** Meta shows the webhook as verified after step 2. A wrong token returns 403.
+2. **Inbound:** from your phone, send “Hello” to the business number → it appears in **Conversations** for the right workspace.
+3. **Statuses:** send the `hello_world` test template (§6), read it on the phone → delivery/read status recorded. Reply inside 24 hours from **Conversations** → that reply’s ticks update.
+4. **Opt-out:** reply `STOP` → the contact shows **Opted out** with a consent-history entry.
+5. Meta → Webhooks also offers **Test** payloads; signed tests from Meta are processed, unsigned/forged requests get 401.
+
+### Reliability
+- The signature (`X-Hub-Signature-256`, HMAC-SHA256 of the raw body with the App Secret) is checked before any parsing; bodies over 1 MB are rejected.
+- Processing is idempotent (message ids, `events/{id}`), so on a transient error the endpoint returns 500 and Meta retries (with backoff, for up to several days). Unknown numbers and malformed items return 200 so Meta doesn’t retry forever.
+- Logs contain no message bodies, phone numbers, tokens or signatures.
+
+### Webhook limitations
+- Messages sent by funnels/automations are not yet shown as outbound bubbles in Conversations (their statuses update the funnel; Phase 4 adds the bubbles).
+- A reply without context to a contact in several active campaigns counts as a reply in each.
+- Media is recorded by media id; downloading media files is not implemented.
+- Processing runs inside the request; very large bursts rely on Meta’s retries rather than a queue.
