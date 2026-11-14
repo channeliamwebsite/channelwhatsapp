@@ -5,7 +5,7 @@
  */
 export type ErrorCategory =
   | "auth" | "permission" | "rate_limit" | "temporary" | "recipient" | "window"
-  | "template" | "policy" | "account" | "invalid_request" | "network" | "invalid_response" | "unknown";
+  | "template" | "policy" | "account" | "not_found" | "invalid_request" | "network" | "invalid_response" | "unknown";
 
 export type ClassifiedError = { category: ErrorCategory; retryable: boolean; message: string };
 
@@ -29,7 +29,11 @@ const RULES: Rule[] = [
 ];
 
 /** Classify a Graph API error (or an HTTP status without a Meta error body). */
-export function classifyMetaError(input: { status?: number; code?: number; message?: string }): ClassifiedError {
+export function classifyMetaError(input: { status?: number; code?: number; subcode?: number; message?: string }): ClassifiedError {
+  if (input.code === 190 && input.subcode === 463) return { category: "auth", retryable: false, message: "Access token has expired (code 190/463)." };
+  if (input.code === 190) return { category: "auth", retryable: false, message: `Access token is invalid${input.subcode ? ` (code 190/${input.subcode})` : " or expired (code 190)"}.` };
+  // "Unsupported get request. Object … does not exist, cannot be loaded due to missing permissions"
+  if (input.code === 100 && input.subcode === 33) return { category: "not_found", retryable: false, message: "Object not found, or the token has no access to it (code 100/33)." };
   if (typeof input.code === "number") {
     const rule = RULES.find((r) => r.codes.includes(input.code!));
     if (rule) return { category: rule.category, retryable: rule.retryable, message: `${rule.message} (code ${input.code})` };

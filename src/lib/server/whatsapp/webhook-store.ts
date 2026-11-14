@@ -39,6 +39,10 @@ export const firestoreWebhookStore: WebhookStore = {
 
   lookupWaMessage,
 
+  async markWebhookReceived(workspaceId, at) {
+    await wsRef(workspaceId).update({ "whatsappAccount.webhookStatus": "verified", "whatsappAccount.webhookLastEventAt": at });
+  },
+
   applyConversationStatus: (workspaceId, waMessageId, status, at, error, messageDocId) => applyStatusUpdate(workspaceId, waMessageId, status, at, error, messageDocId),
 
   ingestFunnelEvent: (event) => ingestEvent(event),
