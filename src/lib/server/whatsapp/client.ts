@@ -4,7 +4,7 @@
  * included in errors.
  */
 import { GRAPH_BASE_URL, isMetaId } from "./config";
-import { classifyMetaError, WhatsAppApiError } from "./errors";
+import { classifyMetaError, safeMetaDetails, WhatsAppApiError } from "./errors";
 import { META_TEMPLATE_FIELDS, parseMetaTemplate, type MetaTemplate } from "./template-sync-rules";
 
 export type FetchLike = (input: string, init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
@@ -58,10 +58,10 @@ export function createWhatsAppClient(options: ClientOptions) {
     } catch {
       throw new WhatsAppApiError({ category: "invalid_response", retryable: res.status >= 500, status: res.status, message: `Meta returned a non-JSON response (HTTP ${res.status}).` });
     }
-    const err = (json as { error?: { code?: number; error_subcode?: number; message?: string; fbtrace_id?: string } }).error;
+    const err = (json as { error?: { code?: number; error_subcode?: number; message?: string; fbtrace_id?: string; error_data?: { details?: unknown } } }).error;
     if (!res.ok || err) {
       const classified = classifyMetaError({ status: res.status, code: err?.code, subcode: err?.error_subcode });
-      throw new WhatsAppApiError({ ...classified, status: res.status, code: err?.code, fbtraceId: err?.fbtrace_id });
+      throw new WhatsAppApiError({ ...classified, status: res.status, code: err?.code, fbtraceId: err?.fbtrace_id, details: safeMetaDetails(err?.error_data?.details) });
     }
     return json as T;
   }
