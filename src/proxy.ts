@@ -15,6 +15,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except login, APIs (they return 401 themselves), tracked links and static assets.
-  matcher: ["/((?!login|api|r/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|ico|webp)$).*)"],
+  // Everything except login, the public legal pages, APIs (they return 401 themselves), tracked links and static assets.
+  matcher: ["/((?!login|privacy-policy|terms-of-service|api|r/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|ico|webp)$).*)"],
 };

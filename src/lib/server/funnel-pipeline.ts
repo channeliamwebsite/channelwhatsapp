@@ -158,7 +158,7 @@ export async function processWorkspace(workspace: Workspace, now: string, limit 
     const key = dedupeKey(campaign.id, p.contactId, action.step);
     const attempt = (pending?.attempts ?? 0) + 1;
     try {
-      await ws.collection("sends").doc(`${key}#${attempt}`).create({ workspaceId: workspace.id, at: now });
+      await ws.collection("sends").doc(`${key}#${attempt}`).create({ workspaceId: workspace.id, contactId: p.contactId, campaignId: campaign.id, at: now });
     } catch {
       continue;
     }

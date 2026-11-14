@@ -30,7 +30,7 @@ export function DuplicatesDialog({
         <>
           <DialogHeader
             title="Review possible duplicates"
-            description="Merging keeps the selected contact, combines groups and tags, and deletes the others. An opt-out on any record is kept."
+            description="Merging keeps the selected contact, combines groups and tags, and permanently deletes the other records together with their messages and campaign history. An opt-out on any record is kept."
             onClose={onClose}
           />
           <DialogBody className="flex flex-col gap-4">
