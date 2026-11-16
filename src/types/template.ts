@@ -11,6 +11,15 @@ export type TemplateButton =
   | { type: "quick_reply"; text: string }
   | { type: "phone"; text: string; phone: string };
 
+/**
+ * Media sent in a template's image / video / document header. Set in the
+ * dashboard (never by Meta sync). Uploaded media ids are issued by Meta for
+ * one phone number and expire after 30 days; links never expire.
+ */
+export type TemplateHeaderMedia =
+  | { source: "upload"; mediaId: string; mimeType: string; filename?: string; uploadedAt: string; phoneNumberId: string }
+  | { source: "link"; link: string; filename?: string };
+
 export type WhatsAppTemplate = {
   id: string;
   workspaceId?: string;
@@ -36,6 +45,8 @@ export type WhatsAppTemplate = {
   unsupportedReason?: string;
   /** Extra status information from sync, e.g. the template no longer exists in Meta. */
   statusDetail?: string;
+  /** Media for an image / video / document header (required to send such templates). */
+  headerMedia?: TemplateHeaderMedia;
   createdAt?: string;
   updatedAt?: string;
 };

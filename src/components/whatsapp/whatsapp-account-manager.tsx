@@ -11,7 +11,7 @@ import { ConfirmDialog, type ConfirmOptions } from "@/components/ui/confirm-dial
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
-import { api } from "@/lib/client/api";
+import { api, apiUpload } from "@/lib/client/api";
 import { useHub } from "@/lib/store/hub-store";
 import { formatDateTime } from "@/lib/utils";
 
@@ -154,6 +154,9 @@ function VerificationPanel({ connected, verification, hasIds, workspaceId, reloa
   const [templateName, setTemplateName] = React.useState("hello_world");
   const [languageCode, setLanguageCode] = React.useState("en_US");
   const [sending, setSending] = React.useState(false);
+  const [headerType, setHeaderType] = React.useState<"none" | "image" | "video" | "document">("none");
+  const [headerFile, setHeaderFile] = React.useState<File | null>(null);
+  const [headerLink, setHeaderLink] = React.useState("");
   const base = `/api/workspaces/${encodeURIComponent(workspaceId)}/whatsapp`;
   const state = verification ? VERIFY_STATE[verification.status] : null;
   const StateIcon = state?.icon ?? CircleAlert;
@@ -199,7 +202,16 @@ function VerificationPanel({ connected, verification, hasIds, workspaceId, reloa
         e.preventDefault();
         setSending(true);
         try {
-          const r = await api<{ messageId: string }>(`${base}/test-message`, { method: "POST", body: { to, templateName, languageCode } });
+          let header: { type: string; mediaId?: string; link?: string; filename?: string } | undefined;
+          if (headerType !== "none") {
+            if (headerFile) {
+              const up = await apiUpload<{ mediaId: string; filename: string; headerType: string }>(`${base}/media`, headerFile);
+              if (up.headerType !== headerType) throw new Error(`That file is a ${up.headerType}, but you chose a ${headerType} header.`);
+              header = { type: headerType, mediaId: up.mediaId, filename: up.filename };
+            } else if (headerLink.trim()) header = { type: headerType, link: headerLink.trim() };
+            else throw new Error(`Choose a ${headerType} file or paste a link for the header.`);
+          }
+          const r = await api<{ messageId: string }>(`${base}/test-message`, { method: "POST", body: { to, templateName, languageCode, ...(header ? { header } : {}) } });
           toast(`Accepted by Meta (message id ${r.messageId.slice(0, 18)}…). Delivery status arrives once webhooks are connected.`);
         } catch (err) { toast((err as Error).message); }
         setSending(false);
@@ -210,6 +222,18 @@ function VerificationPanel({ connected, verification, hasIds, workspaceId, reloa
         <Button type="submit" size="lg" className="self-end" disabled={!connected || sending || !to.trim()} title={connected ? undefined : "Verify the connection first"}>
           {sending ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Send aria-hidden="true" />} Send test
         </Button>
+        <div className="grid gap-3 sm:col-span-4 sm:grid-cols-[180px_1fr_1fr]">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="wa-test-htype">Template header</Label>
+            <select id="wa-test-htype" value={headerType} onChange={(e) => setHeaderType(e.target.value as typeof headerType)} disabled={!connected} className="h-9 rounded-lg border border-input bg-card px-2 text-sm shadow-xs disabled:opacity-50">
+              <option value="none">Text or none</option><option value="image">Image</option><option value="video">Video</option><option value="document">Document</option>
+            </select>
+          </div>
+          {headerType !== "none" && <>
+            <div className="flex flex-col gap-1.5"><Label htmlFor="wa-test-hfile">Header file (up to 4 MB)</Label><Input id="wa-test-hfile" type="file" accept={headerType === "image" ? "image/jpeg,image/png" : headerType === "video" ? "video/mp4,video/3gpp" : ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"} onChange={(e) => setHeaderFile(e.target.files?.[0] ?? null)} disabled={!connected} /></div>
+            <div className="flex flex-col gap-1.5"><Label htmlFor="wa-test-hlink">…or public HTTPS link</Label><Input id="wa-test-hlink" type="url" placeholder="https://…" value={headerLink} onChange={(e) => setHeaderLink(e.target.value)} disabled={!connected || Boolean(headerFile)} /></div>
+          </>}
+        </div>
         {!connected && <p className="text-xs text-muted-foreground sm:col-span-4">Test messages are available after a successful verification. Meta’s sample template “hello_world” (en_US) exists in every WhatsApp Business Account.</p>}
       </form>
     </Card>

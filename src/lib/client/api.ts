@@ -14,3 +14,14 @@ export async function api<T>(url: string, init?: { method?: string; body?: unkno
   if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
   return body as T;
 }
+
+/** Multipart upload to the dashboard API (the browser sets the multipart boundary). */
+export async function apiUpload<T>(url: string, file: File, method: "POST" | "PUT" = "POST"): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(url, { method, body: form, cache: "no-store" });
+  if (res.status === 413 && !res.headers.get("content-type")?.includes("json")) throw new Error("The file is too large to upload (4 MB maximum). Use a public HTTPS link instead.");
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? `Upload failed (${res.status})`);
+  return body as T;
+}

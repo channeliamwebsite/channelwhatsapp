@@ -137,7 +137,15 @@ export const testMessageSchema = z.object({
   to: text(32).min(5),
   templateName: z.string().regex(/^[a-z0-9_]{1,512}$/, "lowercase letters, numbers and underscores"),
   languageCode: z.string().regex(/^[a-z]{2,3}(_[A-Z]{2})?$/, "e.g. en_US"),
+  header: z.object({
+    type: z.enum(["image", "video", "document"]),
+    mediaId: z.string().regex(/^\d{1,40}$/).optional(),
+    link: z.string().url().max(2000).optional(),
+    filename: text(240).optional(),
+  }).refine((h) => Boolean(h.mediaId) !== Boolean(h.link), "provide either an uploaded file or a link").optional(),
 });
+
+export const headerMediaLinkSchema = z.object({ link: z.string().url().max(2000), filename: text(240).optional() });
 
 export const replySchema = z.object({ text: z.string().trim().min(1).max(4096) });
 export const conversationPatchSchema = z.object({ status: z.enum(["open", "pending", "closed"]).optional(), markRead: z.boolean().optional() });

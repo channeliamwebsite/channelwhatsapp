@@ -100,7 +100,7 @@ export type SyncPlan = {
   missing: number;
 };
 
-const SYNCED_FIELDS = ["name", "language", "status", "metaStatus", "metaTemplateId", "wabaId", "category", "header", "body", "footer", "buttons", "rejectedReason", "unsupportedReason", "statusDetail"] as const;
+const SYNCED_FIELDS = ["name", "language", "status", "metaStatus", "metaTemplateId", "wabaId", "category", "header", "body", "footer", "buttons", "rejectedReason", "unsupportedReason", "statusDetail", "headerMedia"] as const;
 const fingerprint = (t: Partial<WhatsAppTemplate>) => JSON.stringify(SYNCED_FIELDS.map((k) => t[k] ?? null));
 
 /**
@@ -144,6 +144,8 @@ export function planTemplateSync(
       rejectedReason: status === "rejected" || status === "paused" || status === "disabled" ? rejected : undefined,
       statusDetail: undefined,
     };
+    // Header media chosen in the dashboard only fits the header type it was chosen for.
+    if (next.headerMedia && existing?.header?.type !== next.header?.type) next.headerMedia = undefined;
     if (existing && fingerprint(existing) === fingerprint(next)) {
       plan.unchanged++;
       continue;

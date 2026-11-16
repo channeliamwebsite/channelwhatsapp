@@ -23,7 +23,7 @@ type Call = { url: string; method: string; headers: Record<string, string>; body
 function fakeFetch(responses: { status: number; body: unknown }[]) {
   const calls: Call[] = [];
   const fn: FetchLike = async (url, init) => {
-    calls.push({ url, method: init.method, headers: init.headers, body: init.body });
+    calls.push({ url, method: init.method, headers: init.headers, body: typeof init.body === "string" ? init.body : undefined });
     const r = responses.shift() ?? { status: 500, body: {} };
     return { ok: r.status >= 200 && r.status < 300, status: r.status, text: async () => (typeof r.body === "string" ? r.body : JSON.stringify(r.body)) };
   };
@@ -49,7 +49,7 @@ test("template payload: approved only, variables, language, unsupported parts", 
   assert.throws(() => buildTemplatePayload("+919847012345", template({ status: "draft" }), ["a", "b"]), /not approved/);
   assert.throws(() => buildTemplatePayload("+919847012345", template(), ["Anita"]), /needs 2/);
   assert.throws(() => buildTemplatePayload("+919847012345", template(), ["Anita", "line\nbreak"]), PayloadError);
-  assert.throws(() => buildTemplatePayload("+919847012345", template({ header: { type: "image" } }), ["a", "b"]), /Media headers/);
+  assert.throws(() => buildTemplatePayload("+919847012345", template({ header: { type: "image" } }), ["a", "b"]), /has an image header. Add header media/);
   assert.throws(() => buildTemplatePayload("+919847012345", template({ buttons: [{ type: "url", text: "Go", url: "https://x.com/{{1}}" }] }), ["a", "b"]), /Dynamic URL/);
   assert.equal(buildNamedTemplatePayload("+919847012345", "hello_world", "en_US").template.name, "hello_world");
   assert.throws(() => buildNamedTemplatePayload("+919847012345", "Hello World", "en_US"), PayloadError);
