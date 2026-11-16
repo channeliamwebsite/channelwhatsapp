@@ -7,7 +7,7 @@ import { GRAPH_BASE_URL, isMetaId } from "./config";
 import { classifyMetaError, safeMetaDetails, WhatsAppApiError } from "./errors";
 import { META_TEMPLATE_FIELDS, parseMetaTemplate, type MetaTemplate } from "./template-sync-rules";
 
-export type FetchLike = (input: string, init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
+export type FetchLike = (input: string, init: { method: string; headers: Record<string, string>; body?: string | FormData; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>;
 
 export type ClientOptions = { accessToken: string; apiVersion: string; timeoutMs?: number; fetch?: FetchLike; baseUrl?: string };
 
@@ -33,20 +33,21 @@ export function createWhatsAppClient(options: ClientOptions) {
   const base = `${options.baseUrl ?? GRAPH_BASE_URL}/${options.apiVersion}`;
   const timeoutMs = options.timeoutMs ?? 15_000;
 
-  async function request<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+  async function request<T>(method: "GET" | "POST", path: string, body?: unknown, timeout = timeoutMs): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), timeout);
     let res: Awaited<ReturnType<FetchLike>>;
     try {
       res = await doFetch(`${base}/${path}`, {
         method,
-        headers: { Authorization: `Bearer ${options.accessToken}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        // FormData sets its own multipart Content-Type (with boundary).
+        headers: { Authorization: `Bearer ${options.accessToken}`, ...(body !== undefined && !(body instanceof FormData) ? { "Content-Type": "application/json" } : {}) },
+        body: body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
     } catch (error) {
       const timedOut = (error as Error)?.name === "AbortError";
-      throw new WhatsAppApiError({ category: "network", retryable: true, message: timedOut ? `Meta API timed out after ${timeoutMs} ms.` : "Could not reach the Meta API." });
+      throw new WhatsAppApiError({ category: "network", retryable: true, message: timedOut ? `Meta API timed out after ${timeout} ms.` : "Could not reach the Meta API." });
     } finally {
       clearTimeout(timer);
     }
@@ -102,6 +103,18 @@ export function createWhatsAppClient(options: ClientOptions) {
       const j = await request<{ data?: { id?: unknown }[] }>("GET", `${wabaId}/phone_numbers?fields=id&limit=100`);
       if (!Array.isArray(j.data)) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta returned no phone number list." });
       return j.data.map((d) => d.id).filter((x): x is string => typeof x === "string");
+    },
+
+    /** POST /{phone-number-id}/media — uploads a file to Meta; the returned id works for 30 days. */
+    async uploadMedia(phoneNumberId: string, file: Blob, mimeType: string, filename: string): Promise<string> {
+      if (!isMetaId(phoneNumberId)) throw new WhatsAppApiError({ category: "invalid_request", retryable: false, message: "Invalid Phone Number ID." });
+      const form = new FormData();
+      form.append("messaging_product", "whatsapp");
+      form.append("type", mimeType);
+      form.append("file", new Blob([await file.arrayBuffer()], { type: mimeType }), filename);
+      const j = await request<{ id?: unknown }>("POST", `${phoneNumberId}/media`, form, Math.max(timeoutMs, 60_000));
+      if (typeof j.id !== "string" || !j.id) throw new WhatsAppApiError({ category: "invalid_response", retryable: false, message: "Meta accepted the upload but returned no media id." });
+      return j.id;
     },
 
     /** GET /me/permissions — permissions granted to the token (System User tokens are user tokens). */

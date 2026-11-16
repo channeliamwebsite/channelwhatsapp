@@ -312,7 +312,7 @@ export async function syncTemplatesFromMeta(workspaceOrId: string | Workspace): 
 }
 
 /** Send one approved template by name (e.g. Meta's "hello_world") to test the connection. */
-export async function sendTestTemplate(workspaceId: string, input: { to: string; templateName: string; languageCode: string }) {
+export async function sendTestTemplate(workspaceId: string, input: { to: string; templateName: string; languageCode: string; header?: { type: "image" | "video" | "document"; mediaId?: string; link?: string; filename?: string } }) {
   const { credentialProviderFor } = await import("./whatsapp/credentials");
   const { createWhatsAppClient } = await import("./whatsapp/client");
   const { buildNamedTemplatePayload, PayloadError } = await import("./whatsapp/payloads");
@@ -322,7 +322,11 @@ export async function sendTestTemplate(workspaceId: string, input: { to: string;
   const creds = await credentialProviderFor(workspace).resolve(workspace);
   if (!creds.ok) throw new ApiError(409, creds.message);
   try {
-    const payload = buildNamedTemplatePayload(input.to, input.templateName, input.languageCode);
+    const h = input.header;
+    const header = h && (h.mediaId || h.link)
+      ? { type: h.type, media: h.mediaId ? { source: "upload" as const, mediaId: h.mediaId, mimeType: "", uploadedAt: new Date().toISOString(), phoneNumberId: creds.credentials.phoneNumberId, filename: h.filename } : { source: "link" as const, link: h.link!, filename: h.filename } }
+      : undefined;
+    const payload = buildNamedTemplatePayload(input.to, input.templateName, input.languageCode, header);
     const client = createWhatsAppClient({ accessToken: creds.credentials.accessToken, apiVersion: creds.credentials.apiVersion });
     const res = await client.sendMessage(creds.credentials.phoneNumberId, payload);
     const { recordWaMessage } = await import("./whatsapp/message-map");
@@ -333,6 +337,64 @@ export async function sendTestTemplate(workspaceId: string, input: { to: string;
     if (error instanceof WhatsAppApiError) throw new ApiError(error.retryable ? 503 : 422, error.message);
     throw error;
   }
+}
+
+/** Upload a file to Meta for this workspace's number (30-day media id). Connected workspaces only. */
+export async function uploadWorkspaceMedia(workspaceId: string, file: File) {
+  const { credentialProviderFor } = await import("./whatsapp/credentials");
+  const { createWhatsAppClient } = await import("./whatsapp/client");
+  const { WhatsAppApiError } = await import("./whatsapp/errors");
+  const { headerTypeForMime, MAX_UPLOAD_BYTES, safeFilename } = await import("./whatsapp/media-rules");
+  const workspace = await requireWorkspace(workspaceId);
+  if (workspace.whatsappAccount.status !== "connected") throw new ApiError(409, "Verify the WhatsApp connection before uploading media.");
+  if (!file.size) throw new ApiError(400, "The file is empty.");
+  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(413, "Files uploaded through the dashboard can be up to 4 MB. For larger videos or documents, use a public HTTPS link instead.");
+  const mimeType = file.type.toLowerCase().split(";")[0].trim();
+  const headerType = headerTypeForMime(mimeType);
+  if (!headerType) throw new ApiError(415, "Unsupported file type. Use JPEG or PNG images, MP4 or 3GP video, or PDF, Word, Excel, PowerPoint or text documents.");
+  const creds = await credentialProviderFor(workspace).resolve(workspace);
+  if (!creds.ok) throw new ApiError(409, creds.message);
+  const filename = safeFilename(file.name) ?? `file.${mimeType.split("/")[1] ?? "bin"}`;
+  try {
+    const client = createWhatsAppClient({ accessToken: creds.credentials.accessToken, apiVersion: creds.credentials.apiVersion });
+    const mediaId = await client.uploadMedia(creds.credentials.phoneNumberId, file, mimeType, filename);
+    return { mediaId, mimeType, filename, headerType, phoneNumberId: creds.credentials.phoneNumberId, uploadedAt: new Date().toISOString() };
+  } catch (error) {
+    if (error instanceof WhatsAppApiError) throw new ApiError(error.retryable ? 503 : 422, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Set (or clear with null) the media sent in a Meta template's image / video /
+ * document header. Only this dashboard field is written — Meta-managed content stays untouched.
+ */
+export async function setTemplateHeaderMedia(workspaceId: string, templateId: string, input: { file: File } | { link: string; filename?: string } | null) {
+  const { linkProblem, safeFilename, isMediaHeader } = await import("./whatsapp/media-rules");
+  const { FieldValue } = await import("firebase-admin/firestore");
+  const ref = wsRef(workspaceId).collection("templates").doc(templateId);
+  const template = (await ref.get()).data() as WhatsAppTemplate | undefined;
+  if (!template || (template.workspaceId && template.workspaceId !== workspaceId)) throw new ApiError(404, "Template not found.");
+  if (!template.metaTemplateId) throw new ApiError(409, "Header media can be added to templates synced from Meta. Submit the template in WhatsApp Manager and sync first.");
+  const headerType = template.header?.type;
+  if (!isMediaHeader(headerType)) throw new ApiError(409, `“${template.name}” has no image, video or document header.`);
+  const now = new Date().toISOString();
+  if (input === null) {
+    await ref.update({ headerMedia: FieldValue.delete(), updatedAt: now });
+    return null;
+  }
+  let media: NonNullable<WhatsAppTemplate["headerMedia"]>;
+  if ("file" in input) {
+    const up = await uploadWorkspaceMedia(workspaceId, input.file);
+    if (up.headerType !== headerType) throw new ApiError(415, `“${template.name}” has ${headerType === "image" ? "an" : "a"} ${headerType} header, but this file is ${up.headerType === "image" ? "an" : "a"} ${up.headerType}.`);
+    media = { source: "upload", mediaId: up.mediaId, mimeType: up.mimeType, filename: up.filename, uploadedAt: up.uploadedAt, phoneNumberId: up.phoneNumberId };
+  } else {
+    const problem = linkProblem(input.link);
+    if (problem) throw new ApiError(400, problem);
+    media = { source: "link", link: input.link, ...(safeFilename(input.filename) ? { filename: safeFilename(input.filename) } : {}) };
+  }
+  await ref.update({ headerMedia: media, updatedAt: now });
+  return media;
 }
 
 /** Applies client edits after enforcing the business rules server-side. Returns new contact ids. */

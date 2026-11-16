@@ -1,7 +1,9 @@
 /** Cloud API message payload builders (pure — unit tested). */
 import { validatePhone } from "@/lib/contacts/phone";
 import { placeholderCount } from "@/lib/funnel/variables";
-import type { WhatsAppTemplate } from "@/types/template";
+import type { TemplateHeaderMedia, WhatsAppTemplate } from "@/types/template";
+
+import { headerParameter, isMediaHeader, linkProblem, type MediaHeaderType } from "./media-rules";
 
 export class PayloadError extends Error {
   constructor(message: string) {
@@ -24,7 +26,7 @@ export function buildTextPayload(to: string, body: string, previewUrl = false) {
   return { messaging_product: "whatsapp", recipient_type: "individual", to: toRecipient(to), type: "text", text: { body: text, preview_url: previewUrl } };
 }
 
-type Component = { type: "body" | "header"; parameters: { type: "text"; text: string }[] };
+type Component = { type: "body" | "header"; parameters: ({ type: "text"; text: string } | ReturnType<typeof headerParameter>)[] };
 
 /**
  * Template payload from a dashboard template record. Only templates whose
@@ -35,9 +37,8 @@ export function buildTemplatePayload(to: string, template: WhatsAppTemplate, var
   if (template.unsupportedReason) throw new PayloadError(`Template “${template.name}”: ${template.unsupportedReason}`);
   if (!/^[a-z0-9_]{1,512}$/.test(template.name)) throw new PayloadError("Invalid template name.");
   if (!/^[a-z]{2,3}(_[A-Z]{2})?$/.test(template.language)) throw new PayloadError("Invalid template language code.");
-  if (template.header && template.header.type !== "none" && template.header.type !== "text") {
-    throw new PayloadError("Media headers need a media URL, which templates don’t store yet.");
-  }
+  const mediaHeader = isMediaHeader(template.header?.type) ? template.header!.type as MediaHeaderType : null;
+  if (mediaHeader && !template.headerMedia) throw new PayloadError(`Template “${template.name}” has ${mediaHeader === "image" ? "an" : "a"} ${mediaHeader} header. Add header media on the Templates page.`);
   if (template.header?.type === "text" && /\{\{\d+\}\}/.test(template.header.text ?? "")) {
     throw new PayloadError("Header variables are not supported yet.");
   }
@@ -49,7 +50,10 @@ export function buildTemplatePayload(to: string, template: WhatsAppTemplate, var
   if (values.length < needed || values.some((v) => !v)) throw new PayloadError(`Template “${template.name}” needs ${needed} non-empty variable(s).`);
   if (values.some((v) => v.length > 1024 || /[\n\t]| {5,}/.test(v))) throw new PayloadError("Template variables can’t contain new lines, tabs, more than 4 spaces in a row, or exceed 1024 characters.");
 
-  const components: Component[] = needed ? [{ type: "body", parameters: values.map((text) => ({ type: "text", text })) }] : [];
+  const components: Component[] = [
+    ...(mediaHeader ? [{ type: "header" as const, parameters: [headerParameter(mediaHeader, template.headerMedia!)] }] : []),
+    ...(needed ? [{ type: "body" as const, parameters: values.map((text) => ({ type: "text" as const, text })) }] : []),
+  ];
   return {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -60,8 +64,13 @@ export function buildTemplatePayload(to: string, template: WhatsAppTemplate, var
 }
 
 /** Template by name with no parameters (e.g. Meta’s sample "hello_world") — Meta validates approval. */
-export function buildNamedTemplatePayload(to: string, name: string, languageCode: string) {
+export function buildNamedTemplatePayload(to: string, name: string, languageCode: string, header?: { type: MediaHeaderType; media: TemplateHeaderMedia }) {
   if (!/^[a-z0-9_]{1,512}$/.test(name)) throw new PayloadError("Invalid template name.");
   if (!/^[a-z]{2,3}(_[A-Z]{2})?$/.test(languageCode)) throw new PayloadError("Invalid language code (e.g. en_US).");
-  return { messaging_product: "whatsapp", recipient_type: "individual", to: toRecipient(to), type: "template", template: { name, language: { code: languageCode } } };
+  if (header?.media.source === "link") {
+    const problem = linkProblem(header.media.link);
+    if (problem) throw new PayloadError(problem);
+  }
+  const components = header ? [{ type: "header", parameters: [headerParameter(header.type, header.media)] }] : undefined;
+  return { messaging_product: "whatsapp", recipient_type: "individual", to: toRecipient(to), type: "template", template: { name, language: { code: languageCode }, ...(components ? { components } : {}) } };
 }

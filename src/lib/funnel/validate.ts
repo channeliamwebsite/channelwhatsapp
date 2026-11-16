@@ -13,6 +13,7 @@ export function validateFunnel(f: FunnelDefinition, templates: WhatsAppTemplate[
     const t = byId.get(id);
     if (!t) problems.push(`${where}: choose a template.`);
     else if (t.status !== "approved") problems.push(`${where}: “${t.name}” is not approved by Meta.`);
+    else if (t.header && ["image", "video", "document"].includes(t.header.type) && !t.headerMedia) problems.push(`${where}: “${t.name}” has ${t.header.type === "image" ? "an" : "a"} ${t.header.type} header — add header media on the Templates page.`);
   };
   checkTemplate(f.message1.templateId, "Message 1");
   if (f.retry.maxAttempts < 0 || f.retry.maxAttempts > 5 || f.retry.delayMinutes < 1 || f.retry.delayMinutes > 1440) problems.push("Retries must be 0–5 attempts with a 1–1440 minute delay.");

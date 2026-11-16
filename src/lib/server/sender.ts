@@ -5,6 +5,7 @@ import type { Workspace } from "@/types/workspace";
 import { createWhatsAppClient, type ClientOptions, type WhatsAppClient } from "./whatsapp/client";
 import { credentialProviderFor, type CredentialProvider } from "./whatsapp/credentials";
 import { WhatsAppApiError, type ErrorCategory } from "./whatsapp/errors";
+import { headerMediaProblem, isMediaHeader, type MediaHeaderType } from "./whatsapp/media-rules";
 import { buildTemplatePayload, buildTextPayload, PayloadError } from "./whatsapp/payloads";
 
 /** `buttonUrls` is kept for compatibility; static URL buttons need no parameters. */
@@ -35,12 +36,12 @@ export type SenderDeps = {
 };
 
 export function createCloudSender(workspace: Workspace, deps: SenderDeps): MessageSender {
-  async function deliver(build: (wabaId: string) => object): Promise<SendResult> {
+  async function deliver(build: (ids: { wabaId: string; phoneNumberId: string }) => object): Promise<SendResult> {
     const creds = await deps.provider.resolve(workspace);
     if (!creds.ok) return { ok: false, retryable: false, error: creds.message, category: "auth" };
     let payload: object;
     try {
-      payload = build(creds.credentials.wabaId);
+      payload = build({ wabaId: creds.credentials.wabaId, phoneNumberId: creds.credentials.phoneNumberId });
     } catch (error) {
       if (error instanceof PayloadError) return { ok: false, retryable: false, error: error.message, category: "invalid_request" };
       throw error;
@@ -56,9 +57,13 @@ export function createCloudSender(workspace: Workspace, deps: SenderDeps): Messa
     }
   }
   return {
-    send: (m) => deliver((wabaId) => {
+    send: (m) => deliver(({ wabaId, phoneNumberId }) => {
       // Approved status is only meaningful for the WABA the template was synced from.
       if (m.template.wabaId !== wabaId) throw new PayloadError(`Template “${m.template.name}” was not synced from this workspace’s WhatsApp Business Account. Sync templates from Meta.`);
+      if (isMediaHeader(m.template.header?.type)) {
+        const problem = headerMediaProblem(m.template.header!.type as MediaHeaderType, m.template.headerMedia, { phoneNumberId, now: new Date().toISOString() });
+        if (problem) throw new PayloadError(`Template “${m.template.name}”: ${problem}`);
+      }
       return buildTemplatePayload(m.to, m.template, m.variables);
     }),
     sendText: (to, body) => deliver(() => buildTextPayload(to, body)),

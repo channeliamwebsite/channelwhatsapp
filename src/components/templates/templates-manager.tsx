@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { CircleAlert, Copy, Info, Pencil, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
+import { CircleAlert, Copy, ImagePlus, Info, Pencil, Plus, RefreshCw, Send, Trash2, X } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/page-header";
+import { HeaderMediaDialog, headerMediaStatus } from "@/components/templates/header-media-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -37,6 +38,7 @@ const blank = (): WhatsAppTemplate => ({ id: `tpl_${crypto.randomUUID().slice(0,
 export function TemplatesManager() {
   const { workspace, data, update, reload } = useHub();
   const [syncing, setSyncing] = React.useState(false);
+  const [mediaFor, setMediaFor] = React.useState<WhatsAppTemplate | null>(null);
   const account = workspace.whatsappAccount;
   const hasIds = Boolean(account.phoneNumberId && account.wabaId);
   const sync = account.templateSync;
@@ -89,10 +91,11 @@ export function TemplatesManager() {
               <tbody>
                 {data.templates.map((t) => {
                   const fromMeta = Boolean(t.metaTemplateId);
+                  const hasMediaHeader = t.header?.type === "image" || t.header?.type === "video" || t.header?.type === "document";
                   const editable = !fromMeta && (t.status === "draft" || t.status === "rejected");
                   return (
                     <tr key={t.id} className="border-b border-border last:border-0">
-                      <td className="max-w-md px-5 py-3"><p className="flex items-center gap-2 font-mono text-[13px] font-medium">{t.name}{fromMeta && <span className="rounded bg-muted px-1.5 py-px font-sans text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Meta</span>}</p><p className="line-clamp-1 text-xs text-muted-foreground">{t.body}</p></td>
+                      <td className="max-w-md px-5 py-3"><p className="flex items-center gap-2 font-mono text-[13px] font-medium">{t.name}{fromMeta && <span className="rounded bg-muted px-1.5 py-px font-sans text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Meta</span>}</p><p className="line-clamp-1 text-xs text-muted-foreground">{t.body}</p>{fromMeta && hasMediaHeader && (() => { const m = headerMediaStatus(t.headerMedia); return <p className={`mt-1 text-[11px] ${m.tone === "ok" ? "text-muted-foreground" : m.tone === "warning" ? "text-warning" : "text-destructive"}`}>{t.header!.type} header · {m.text}</p>; })()}</td>
                       <td className="px-3 py-3 text-xs">{t.category}</td>
                       <td className="px-3 py-3 font-mono text-xs">{t.language}</td>
                       <td className="max-w-56 px-3 py-3">
@@ -105,6 +108,7 @@ export function TemplatesManager() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-3 text-xs text-muted-foreground">{t.updatedAt ? formatDate(t.updatedAt) : "—"}</td>
                       <td className="px-5 py-3"><div className="flex justify-end gap-1">
+                        {fromMeta && hasMediaHeader && <Button variant="ghost" size="icon-lg" aria-label={`Header media for ${t.name}`} title="Header media" onClick={() => setMediaFor(t)}><ImagePlus aria-hidden="true" /></Button>}
                         {editable && <Button variant="ghost" size="icon-lg" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)}><Pencil aria-hidden="true" /></Button>}
                         {t.status === "draft" && !fromMeta && <Button variant="ghost" size="icon-lg" aria-label={`Submit ${t.name} for approval`} title="Mark ready for Meta approval" onClick={() => save({ ...t, status: "pending" }, `${t.name} marked pending approval`)}><Send aria-hidden="true" /></Button>}
                         <Button variant="ghost" size="icon-lg" aria-label={`Duplicate ${t.name}`} onClick={() => setEditing({ ...t, id: blank().id, name: `${t.name}_v2`.slice(0, 512), status: "draft", metaTemplateId: undefined, metaStatus: undefined, wabaId: undefined, rejectedReason: undefined, unsupportedReason: undefined, statusDetail: undefined })}><Copy aria-hidden="true" /></Button>
@@ -120,6 +124,9 @@ export function TemplatesManager() {
       </Card>
       <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)} className="max-w-4xl">
         {editing && <TemplateForm key={editing.id} initial={editing} onClose={() => setEditing(null)} onSave={async (t) => { if (await save(t, `${t.name} saved`)) setEditing(null); }} />}
+      </Dialog>
+      <Dialog open={mediaFor !== null} onOpenChange={(o) => !o && setMediaFor(null)} className="max-w-lg">
+        {mediaFor && <HeaderMediaDialog key={mediaFor.id} workspaceId={workspace.id} template={mediaFor} onClose={() => setMediaFor(null)} onSaved={async (m) => { await reload(); setMediaFor(null); toast(m); }} />}
       </Dialog>
       <ConfirmDialog options={confirm} onClose={() => setConfirm(null)} />
       {toastElement}
