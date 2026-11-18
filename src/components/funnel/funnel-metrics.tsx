@@ -32,7 +32,7 @@ export function FunnelKpis({ metrics }: { metrics: FunnelMetrics }) {
 /** Horizontal bars: audience → M1 → M2 → M3 → converted. */
 export function FunnelProgression({ metrics }: { metrics: FunnelMetrics }) {
   const rows = [
-    { label: "In audience", value: metrics.audience, note: `${formatNumber(metrics.excluded)} excluded (consent / opt-out)` },
+    { label: "In audience", value: metrics.audience, note: [`${formatNumber(metrics.excluded)} excluded (consent / opt-out)`, metrics.awaitingFirstSend ? `${formatNumber(metrics.awaitingFirstSend)} waiting for first send` : ""].filter(Boolean).join(" · ") },
     { label: "Message 1 sent", value: metrics.steps[0].sent },
     { label: "Message 2 sent", value: metrics.steps[1].sent },
     { label: "Message 3 sent", value: metrics.steps[2].sent },
