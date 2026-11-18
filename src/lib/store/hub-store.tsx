@@ -169,8 +169,14 @@ export function HubProvider({ children }: { children: React.ReactNode }) {
     async (campaignId: string, action: CampaignAction) => {
       if (!workspaceId) return false;
       try {
-        await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/${action}`, { method: "POST" });
+        const r = await api<{ sending?: { sent: number; held: number; remaining: boolean; issues: string[]; skipped?: string } }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/campaigns/${encodeURIComponent(campaignId)}/${action}`, { method: "POST" });
         await reload();
+        const s = r.sending;
+        if (s) {
+          if (s.skipped) toast(s.skipped);
+          else if (s.issues.length) toast(`${s.sent} sent. Held: ${s.issues[0]}`);
+          else toast(`${s.sent} message${s.sent === 1 ? "" : "s"} sent to WhatsApp${s.remaining ? " — the rest go out with the scheduled job" : ""}. Delivery updates arrive shortly.`);
+        }
         return true;
       } catch (e) {
         toast((e as Error).message);

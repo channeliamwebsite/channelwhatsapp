@@ -326,6 +326,11 @@ export async function sendTestTemplate(workspaceId: string, input: { to: string;
     const header = h && (h.mediaId || h.link)
       ? { type: h.type, media: h.mediaId ? { source: "upload" as const, mediaId: h.mediaId, mimeType: "", uploadedAt: new Date().toISOString(), phoneNumberId: creds.credentials.phoneNumberId, filename: h.filename } : { source: "link" as const, link: h.link!, filename: h.filename } }
       : undefined;
+    if (header?.media.source === "link") {
+      const { checkMediaLink } = await import("./whatsapp/media-link-check");
+      const problem = await checkMediaLink(header.media.link, header.type);
+      if (problem) throw new ApiError(400, `Header ${header.type} link: ${problem}`);
+    }
     const payload = buildNamedTemplatePayload(input.to, input.templateName, input.languageCode, header);
     const client = createWhatsAppClient({ accessToken: creds.credentials.accessToken, apiVersion: creds.credentials.apiVersion });
     const res = await client.sendMessage(creds.credentials.phoneNumberId, payload);
@@ -389,7 +394,8 @@ export async function setTemplateHeaderMedia(workspaceId: string, templateId: st
     if (up.headerType !== headerType) throw new ApiError(415, `“${template.name}” has ${headerType === "image" ? "an" : "a"} ${headerType} header, but this file is ${up.headerType === "image" ? "an" : "a"} ${up.headerType}.`);
     media = { source: "upload", mediaId: up.mediaId, mimeType: up.mimeType, filename: up.filename, uploadedAt: up.uploadedAt, phoneNumberId: up.phoneNumberId };
   } else {
-    const problem = linkProblem(input.link);
+    const { checkMediaLink } = await import("./whatsapp/media-link-check");
+    const problem = linkProblem(input.link) ?? (await checkMediaLink(input.link, headerType));
     if (problem) throw new ApiError(400, problem);
     media = { source: "link", link: input.link, ...(safeFilename(input.filename) ? { filename: safeFilename(input.filename) } : {}) };
   }
@@ -532,6 +538,20 @@ export async function applySync(workspaceId: string, payload: SyncPayload): Prom
 
 export type CampaignAction = "launch" | "pause" | "resume" | "stop";
 
+/** Checks every header media LINK used by a campaign's funnel actually serves a sendable file. */
+async function funnelMediaLinkProblem(campaign: Campaign, templates: WhatsAppTemplate[]) {
+  const { checkMediaLink } = await import("./whatsapp/media-link-check");
+  const { isMediaHeader } = await import("./whatsapp/media-rules");
+  const f = campaign.funnel;
+  const ids = new Set([f.message1.templateId, ...[...Object.values(f.message2), ...Object.values(f.message3)].flatMap((a) => (a.type === "send" ? [a.templateId] : []))]);
+  for (const t of templates.filter((x) => ids.has(x.id))) {
+    if (!isMediaHeader(t.header?.type) || t.headerMedia?.source !== "link") continue;
+    const problem = await checkMediaLink(t.headerMedia.link, t.header!.type as "image" | "video" | "document");
+    if (problem) return `“${t.name}” header ${t.header!.type} link: ${problem} Fix it on the Templates page.`;
+  }
+  return null;
+}
+
 export async function runCampaignAction(workspaceId: string, campaignId: string, action: CampaignAction) {
   const workspace = await requireWorkspace(workspaceId);
   const ref = wsRef(workspaceId);
@@ -557,8 +577,11 @@ export async function runCampaignAction(workspaceId: string, campaignId: string,
   }
   if (action === "resume") {
     if (campaign.status !== "paused") throw new ApiError(409, "Only paused campaigns can be resumed.");
-    const problems = validateFunnel(campaign.funnel, await listOwned<WhatsAppTemplate>(workspaceId, "templates"));
+    const resumeTemplates = await listOwned<WhatsAppTemplate>(workspaceId, "templates");
+    const problems = validateFunnel(campaign.funnel, resumeTemplates);
     if (problems.length) throw new ApiError(400, problems[0]);
+    const mediaProblem = await funnelMediaLinkProblem(campaign, resumeTemplates);
+    if (mediaProblem) throw new ApiError(400, mediaProblem);
     await transition(["paused"], { status: "running" }, "Only paused campaigns can be resumed.");
     return withLog({}, "campaign_resumed", `“${campaign.name}” resumed`);
   }
@@ -576,6 +599,8 @@ export async function runCampaignAction(workspaceId: string, campaignId: string,
   const [contacts, templates, segments] = await Promise.all([listOwned<Contact>(workspaceId, "contacts"), listOwned<WhatsAppTemplate>(workspaceId, "templates"), listOwned<Segment>(workspaceId, "segments")]);
   const problems = validateFunnel(campaign.funnel, templates);
   if (problems.length) throw new ApiError(400, problems[0]);
+  const mediaProblem = await funnelMediaLinkProblem(campaign, templates);
+  if (mediaProblem) throw new ApiError(400, mediaProblem);
   const audience = resolveAudience(contacts, campaign.audienceGroups, segments.filter((s) => campaign.segmentIds?.includes(s.id)));
   if (!audience.eligible.length) throw new ApiError(400, "No campaign-eligible contacts in the selected audience.");
   const base = (c: Contact) => ({ id: `${campaignId}__${c.id}`, workspaceId, campaignId, contactId: c.id, currentStep: 0 as const, messages: [] });

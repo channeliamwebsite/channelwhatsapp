@@ -26,6 +26,8 @@ import { db } from "./firebase-admin";
 import { listOwned, syncTemplatesFromMeta, wsRef } from "./repo";
 
 import { getSender, type MessageSender } from "./sender";
+import { checkMediaLink } from "./whatsapp/media-link-check";
+import { isMediaHeader, type MediaHeaderType } from "./whatsapp/media-rules";
 import { recordWaMessage } from "./whatsapp/message-map";
 export type { MessageSender };
 
@@ -109,28 +111,50 @@ export async function ingestEvent(e: FunnelEventInput) {
 }
 
 // ---------------------------------------------------------------- processing
-export type ProcessSummary = { workspaceId: string; sent: number; exited: number; completed: number; held?: number; skipped?: string };
+export type ProcessSummary = {
+  workspaceId: string; sent: number; exited: number; completed: number; held?: number; skipped?: string;
+  /** Problems that held recipients back (e.g. a header media link Meta can't download). */
+  issues?: string[];
+  /** More due recipients than `limit` — the rest are handled by the next run. */
+  reachedLimit?: boolean;
+};
 
 /** A paused template (Meta quality pause) is temporary: recipients wait instead of exiting. */
 const PAUSED_RETRY_HOURS = 1;
 
-/** Advance every due recipient of a workspace's active campaigns. */
-export async function processWorkspace(workspace: Workspace, now: string, limit = 200): Promise<ProcessSummary> {
+/**
+ * Advance every due recipient of a workspace's active campaigns — or, with
+ * `campaignId`, only that campaign's (used right after Launch / Resume).
+ */
+export async function processWorkspace(workspace: Workspace, now: string, limit = 200, options: { campaignId?: string } = {}): Promise<ProcessSummary> {
   const summary: ProcessSummary = { workspaceId: workspace.id, sent: 0, exited: 0, completed: 0 };
   const sender = getSender(workspace);
   if (!sender) return { ...summary, skipped: "Sending unavailable — WhatsApp integration not connected" };
 
   const ws = wsRef(workspace.id);
-  const due = await ws.collection("recipients").where("state", "==", "waiting").where("nextActionAt", "<=", now).limit(limit).get();
-  if (due.empty) return summary;
+  // Campaign-scoped runs filter in memory: a campaignId equality query needs no composite index.
+  const dueDocs = options.campaignId
+    ? (await ws.collection("recipients").where("campaignId", "==", options.campaignId).get()).docs
+      .filter((d) => { const r = d.data() as RecipientProgress; return r.state === "waiting" && typeof r.nextActionAt === "string" && r.nextActionAt <= now; })
+      .slice(0, limit)
+    : (await ws.collection("recipients").where("state", "==", "waiting").where("nextActionAt", "<=", now).limit(limit).get()).docs;
+  if (!dueDocs.length) return summary;
+  if (dueDocs.length >= limit) summary.reachedLimit = true;
   // Recheck Meta's template status before sending. If Meta can't confirm it, send nothing this run.
   const fresh = await syncTemplatesFromMeta(workspace);
   if (!fresh.ok) return { ...summary, skipped: `Template status could not be confirmed with Meta: ${fresh.message}` };
   const [campaigns, templates] = await Promise.all([listOwned<Campaign>(workspace.id, "campaigns"), listOwned<WhatsAppTemplate>(workspace.id, "templates")]);
   const campaignById = new Map(campaigns.map((c) => [c.id, c]));
   const templateById = new Map(templates.map((t) => [t.id, t]));
+  // A header media link is checked once per run: if Meta couldn't download it, every message would fail after "sending".
+  const linkChecks = new Map<string, Promise<string | null>>();
+  const linkProblemFor = (t: WhatsAppTemplate) => {
+    if (!isMediaHeader(t.header?.type) || t.headerMedia?.source !== "link") return Promise.resolve(null);
+    if (!linkChecks.has(t.id)) linkChecks.set(t.id, checkMediaLink(t.headerMedia.link, t.header!.type as MediaHeaderType));
+    return linkChecks.get(t.id)!;
+  };
 
-  for (const doc of due.docs) {
+  for (const doc of dueDocs) {
     const p = doc.data() as RecipientProgress;
     const campaign = campaignById.get(p.campaignId);
     if (!campaign || campaign.status !== "running") continue; // paused/cancelled: nothing moves
@@ -152,6 +176,14 @@ export async function processWorkspace(workspace: Workspace, now: string, limit 
 
     const contact = (await ws.collection("contacts").doc(p.contactId).get()).data() as Contact | undefined;
     const template = templateById.get(action.templateId);
+    const mediaLinkProblem = template ? await linkProblemFor(template) : null;
+    if (mediaLinkProblem) {
+      // Held, not exited: the recipient stays due and is sent once the link is fixed.
+      summary.held = (summary.held ?? 0) + 1;
+      const issue = `“${template!.name}” header link: ${mediaLinkProblem}`;
+      summary.issues = [...new Set([...(summary.issues ?? []), issue])];
+      continue;
+    }
     if (template?.status === "paused") {
       await doc.ref.update({ nextActionAt: addHours(now, PAUSED_RETRY_HOURS) });
       summary.held = (summary.held ?? 0) + 1;

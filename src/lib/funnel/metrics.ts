@@ -9,7 +9,10 @@ export type StepMetrics = { step: FunnelStep; sent: number; delivered: number; r
 
 export type FunnelMetrics = {
   audience: number;
+  /** Left out at launch by the consent / eligibility checks (exit reason opted_out or not_eligible, nothing sent). */
   excluded: number;
+  /** Still waiting for their first message to be sent. */
+  awaitingFirstSend: number;
   started: number;
   totals: { sent: number; delivered: number; read: number; failed: number; clicked: number };
   replied: number;
@@ -69,7 +72,8 @@ export function computeFunnelMetrics(recipients: RecipientProgress[]): FunnelMet
 
   return {
     audience: recipients.length,
-    excluded: recipients.length - started.length,
+    excluded: recipients.filter((r) => accepted(r).length === 0 && (r.exitReason === "opted_out" || r.exitReason === "not_eligible")).length,
+    awaitingFirstSend: recipients.filter((r) => accepted(r).length === 0 && r.state === "waiting").length,
     started: started.length,
     totals,
     replied,
